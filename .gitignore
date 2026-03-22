@@ -11,3 +11,4 @@ results/figures/*
 *.sqlite
 *.sqlite3
 *.db
+deploy/*.env

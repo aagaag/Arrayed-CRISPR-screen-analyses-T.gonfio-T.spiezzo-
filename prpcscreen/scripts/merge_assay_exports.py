@@ -69,6 +69,13 @@ def load_measurement_table(path: Path, skip_lines: int) -> pd.DataFrame:
     return pd.read_csv(path, skiprows=skip_lines, sep=None, engine="python")
 
 
+def load_layout_table(path: Path) -> pd.DataFrame:
+    # Older deployments commonly stored the plate map as an Excel workbook.
+    if path.suffix.lower() in {".xlsx", ".xls", ".xlsm"}:
+        return pd.read_excel(path)
+    return pd.read_csv(path)
+
+
 def discover_candidate_measurement_files(raw_root: Path) -> list[Path]:
     # Include common export extensions and preserve deterministic ordering.
     out: list[Path] = []
@@ -256,7 +263,7 @@ def run_merge_cli() -> None:
     # Parse all required paths and optional header-skip overrides.
     parser = argparse.ArgumentParser(description="Integrate raw PrP screen data into a tidy table.")
     parser.add_argument("raw_dir", help="Directory (or file within directory) containing raw assay exports")
-    parser.add_argument("layout_csv", help="Plate layout CSV")
+    parser.add_argument("layout_csv", help="Plate layout file (CSV or Excel workbook)")
     parser.add_argument("output_csv", help="Integrated output CSV")
     parser.add_argument("--skip-fret", type=int, default=38)
     parser.add_argument("--skip-glo", type=int, default=9)
@@ -306,7 +313,7 @@ def run_merge_cli() -> None:
     debug_log(f"Loaded {len(fret_tables)} TR-FRET tables and {len(glo_tables)} GLO tables", debug_enabled)
 
     # Load annotation/layout table used as row-level output scaffold.
-    layout = pd.read_csv(args.layout_csv)
+    layout = load_layout_table(layout_path)
     layout = drop_stale_analysis_columns(layout)
     debug_log(f"Layout table rows: {len(layout)}", debug_enabled)
 

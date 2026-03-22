@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import ipaddress
 import os
 import re
 import secrets
@@ -56,6 +57,7 @@ AUTH_CONTACT_EMAIL = os.getenv("PRPCSCREEN_AUTH_CONTACT_EMAIL", "contact@isab.sc
 SESSION_SECRET = os.getenv("PRPCSCREEN_SESSION_SECRET", "").strip() or "change-me-prpcscreen-session-secret"
 APPROVAL_TOKEN_SECRET = os.getenv("PRPCSCREEN_APPROVAL_TOKEN_SECRET", "").strip() or SESSION_SECRET
 PUBLIC_BASE_URL = os.getenv("PRPCSCREEN_PUBLIC_BASE_URL", "").strip().rstrip("/")
+SESSION_COOKIE_DOMAIN = os.getenv("PRPCSCREEN_SESSION_COOKIE_DOMAIN", "").strip() or None
 BOOTSTRAP_ADMIN_EMAIL = os.getenv("PRPCSCREEN_ADMIN_EMAIL", "admin@isab.science").strip() or "admin@isab.science"
 BOOTSTRAP_ADMIN_PASSWORD = os.getenv("PRPCSCREEN_ADMIN_PASSWORD", "admin").strip() or "admin"
 PASSWORD_MIN_LENGTH = 1
@@ -66,6 +68,14 @@ PUBLIC_USER_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 PRIMARY_ADMIN_USERNAME = os.getenv("PRPCSCREEN_PRIMARY_ADMIN_USER", "aag").strip() or "aag"
 PRIMARY_ADMIN_EMAIL = os.getenv("PRPCSCREEN_PRIMARY_ADMIN_EMAIL", "adriano.aguzzi@isab.science").strip().lower()
 SWISS_TZ = ZoneInfo("Europe/Zurich")
+LOCAL_BYPASS_HOSTS = {
+    host.strip().lower()
+    for host in os.getenv(
+        "PRPCSCREEN_LOCAL_BYPASS_HOSTS",
+        "crispr-tools.lan,localhost,127.0.0.1,127.0.1.1,10.10.20.10,appenzell.internet-box.ch",
+    ).split(",")
+    if host.strip()
+}
 
 
 def _resolve_metadata_db_path() -> Path:
@@ -153,6 +163,14 @@ def _looks_like_layout_workbook(path_text: str) -> bool:
     return "/layout/" in norm
 
 
+REQUIRED_LAYOUT_COLUMNS = {"plate_number_384", "well_number_384", "is_nt_ctrl", "is_pos_ctrl"}
+
+
+def _has_required_layout_columns(columns: list[object]) -> bool:
+    lookup = {str(c).strip().lower() for c in columns if str(c).strip()}
+    return REQUIRED_LAYOUT_COLUMNS.issubset(lookup)
+
+
 def _has_required_skyline_columns(columns: list[object]) -> bool:
     lookup = {str(c).strip().lower() for c in columns if str(c).strip()}
     for canonical in REQUIRED_SKYLINE_COLUMNS:
@@ -190,6 +208,42 @@ def _workbook_has_skyline_columns(path_text: str) -> bool:
             workbook.close()
         except Exception:
             pass
+    return False
+
+
+@lru_cache(maxsize=512)
+def _path_has_layout_columns(path_text: str) -> bool:
+    path = Path(path_text)
+    if not path.exists():
+        return False
+    try:
+        import pandas as pd
+    except Exception:
+        return False
+    suffix = path.suffix.lower()
+    try:
+        if suffix in {".xlsx", ".xls"}:
+            workbook = pd.ExcelFile(path)
+            try:
+                for sheet_name in workbook.sheet_names:
+                    try:
+                        header = pd.read_excel(workbook, sheet_name=sheet_name, nrows=0)
+                    except Exception:
+                        continue
+                    if _has_required_layout_columns(list(header.columns)):
+                        return True
+            finally:
+                try:
+                    workbook.close()
+                except Exception:
+                    pass
+            return False
+        if suffix in {".csv", ".tsv", ".txt"}:
+            sep = "\t" if suffix == ".tsv" else None
+            header = pd.read_csv(path, nrows=0, sep=sep, engine="python")
+            return _has_required_layout_columns(list(header.columns))
+    except Exception:
+        return False
     return False
 
 
@@ -239,7 +293,13 @@ RUN_LOCK = threading.Lock()
 metadata_store = MetadataStore(METADATA_DB_PATH)
 
 app = FastAPI(title="PrPC Screen Web Runner")
-app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax", https_only=False)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SESSION_SECRET,
+    same_site="lax",
+    https_only=bool(SESSION_COOKIE_DOMAIN),
+    domain=SESSION_COOKIE_DOMAIN,
+)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.mount("/static", StaticFiles(directory=str(REPO_ROOT / "webapp" / "static")), name="static")
 templates = Jinja2Templates(directory=str(REPO_ROOT / "webapp" / "templates"))
@@ -303,6 +363,15 @@ def _normalize_public_user_id(value: str) -> str:
 
 
 def _session_user(request: Request) -> dict[str, Any] | None:
+    session = _session_user_from_session(request)
+    if session is not None:
+        return session
+    return _edge_authenticated_user(request) or _local_bypass_user(request)
+
+
+def _session_user_from_session(request: Request | None) -> dict[str, Any] | None:
+    if request is None:
+        return None
     session = request.session.get("user")
     if not isinstance(session, dict):
         return None
@@ -314,6 +383,70 @@ def _session_user(request: Request) -> dict[str, Any] | None:
         return None
     user["is_admin"] = bool(user.get("is_admin"))
     return user
+
+
+def _request_host(request: Request | None) -> str:
+    if request is None:
+        return ""
+    forwarded = request.headers.get("x-forwarded-host", "").strip()
+    host = forwarded or request.headers.get("host", "").strip()
+    return host.split(":", 1)[0].strip().lower()
+
+
+def _is_private_ip_host(host: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_private or ip.is_loopback
+
+
+def _is_local_bypass_request(request: Request | None) -> bool:
+    host = _request_host(request)
+    if not host:
+        return False
+    if host in LOCAL_BYPASS_HOSTS or host.endswith(".lan"):
+        return True
+    return _is_private_ip_host(host)
+
+
+def _local_bypass_user(request: Request | None) -> dict[str, Any] | None:
+    if not _is_local_bypass_request(request):
+        return None
+    return {
+        "username": PRIMARY_ADMIN_USERNAME,
+        "email": PRIMARY_ADMIN_EMAIL,
+        "is_admin": True,
+        "status": "approved",
+    }
+
+
+def _edge_authenticated_user(request: Request | None) -> dict[str, Any] | None:
+    if request is None:
+        return None
+    raw = request.headers.get("x-auth-user", "").strip()
+    if not raw:
+        return None
+
+    # Prefer a real approved app account when the shared-auth identity matches one.
+    user = metadata_store.get_user_by_username(raw)
+    if not user and "@" in raw:
+        user = metadata_store.get_user_by_email(raw)
+    if user:
+        user["is_admin"] = bool(user.get("is_admin"))
+        return user
+
+    username = raw
+    email = ""
+    if "@" in raw:
+        email = raw.lower()
+        username = raw.split("@", 1)[0]
+    return {
+        "username": username[:255] or "shared-auth",
+        "email": email,
+        "is_admin": False,
+        "status": "approved",
+    }
 
 
 def _require_user(request: Request) -> dict[str, Any]:
@@ -380,7 +513,7 @@ def _request_username(request: Request | None) -> str:
     user = _session_user(request)
     if user:
         return str(user.get("username") or "local")
-    for header in ("x-forwarded-user", "x-auth-request-user", "x-remote-user"):
+    for header in ("x-auth-user", "x-forwarded-user", "x-auth-request-user", "x-remote-user"):
         value = request.headers.get(header, "").strip()
         if value:
             return value[:255]
@@ -625,36 +758,30 @@ def _scan_root(root_text: str) -> dict[str, Any]:
         for p in sorted(files, key=lambda x: x.as_posix().lower())
         if p.suffix.lower() in RAW_FILE_EXTENSIONS
     )
-    layout_files = [p for p in files if p.suffix.lower() == ".csv"]
     excel_files = [p for p in files if p.suffix.lower() in EXCEL_FILE_EXTENSIONS]
+    layout_files = [p for p in files if p.suffix.lower() == ".csv"]
+    layout_files.extend(p for p in excel_files if _looks_like_layout_workbook(str(p)))
 
     def rank_layout_base(path: Path) -> int:
         score = 0
         name = path.name.lower()
         full = str(path).lower()
+        if _looks_like_layout_workbook(str(path)):
+            score += 2
         if re.search(r"layout|annotation|annot|plate|map", name):
             score += 3
         if "/layout/" in full.replace("\\", "/"):
             score += 2
+        if re.search(r"integrated|analyzed|hits|complete|genes", name):
+            score -= 6
         if re.search(r"fret|tr-fret|glo|raw|edge", name):
             score -= 3
         return score
 
     def layout_header_bonus(path: Path) -> int:
         bonus = 0
-        try:
-            with path.open("rb") as f:
-                header = f.readline(8192).decode("utf-8", errors="ignore").lower()
-            if "well_number_384" in header:
-                bonus += 6
-            if "plate_number_384" in header:
-                bonus += 4
-            if "is_nt_ctrl" in header:
-                bonus += 4
-            if "is_pos_ctrl" in header:
-                bonus += 4
-        except OSError:
-            bonus -= 1
+        if _path_has_layout_columns(str(path)):
+            bonus += 20
         return bonus
 
     layout_scored = [{"path": p, "score": rank_layout_base(p)} for p in layout_files]
@@ -943,8 +1070,8 @@ def auth_me(request: Request) -> dict[str, Any]:
 
 
 @app.get("/auth/login", response_class=HTMLResponse)
-def auth_login_page(request: Request) -> HTMLResponse:
-    if _session_user(request):
+def auth_login_page(request: Request, force: int = Query(default=0)) -> HTMLResponse:
+    if _session_user_from_session(request) and not force:
         return RedirectResponse(url="/", status_code=303)
     return templates.TemplateResponse(request=request, name="login.html", context={"error": "", "notice": ""})
 
@@ -1338,6 +1465,7 @@ def index(request: Request) -> HTMLResponse:
         name="index.html",
         context={
             "user": user,
+            "has_local_session": _session_user_from_session(request) is not None,
             "defaults": {
                 "data_root": _default_data_root(),
                 "mode": DEFAULT_MODE,
@@ -1381,6 +1509,15 @@ def api_run(body: RunRequest, request: Request) -> dict[str, str]:
                 raise HTTPException(status_code=400, detail=f"Missing required field: {required}")
         if not Path(body.layout_csv).exists():
             raise HTTPException(status_code=400, detail=f"Layout CSV not found: {body.layout_csv}")
+        if not _path_has_layout_columns(body.layout_csv):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Layout file does not look like the flattened annotation table required for arrayed runs. "
+                    "Select a CSV/XLSX with Plate_number_384, Well_number_384, Is_NT_ctrl, and Is_pos_ctrl "
+                    "(for this dataset, use 01_integrated.csv rather than Layout.xlsx)."
+                ),
+            )
         if genomics_path is None or not genomics_path.exists():
             raise HTTPException(status_code=400, detail=f"Genomics Excel not found: {body.genomics_excel}")
         if _looks_like_layout_workbook(str(genomics_path)):

@@ -13,11 +13,14 @@
     <section class="panel">
       <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-bottom:8px;">
         <span style="font-size:12px; color:#334155;">Signed in as {{ user.username }}{% if user.email %} ({{ user.email }}){% endif %}</span>
-        {% if user.is_admin and user.username|lower == "aag" %}
+        {% if user.is_admin %}
         <a href="/admin/dashboard" style="font-size:12px; color:#0f172a;">Admin</a>
         {% endif %}
+        {% if not has_local_session %}
+        <a href="/auth/login?force=1" style="font-size:12px; color:#0f172a;">App Login</a>
+        {% endif %}
         <form action="/auth/logout" method="post" style="margin:0;">
-          <button type="submit" class="secondary" style="padding:4px 8px; font-size:12px;">Log out</button>
+          <button type="submit" class="secondary" style="padding:4px 8px; font-size:12px;">{% if has_local_session %}Leave App Login{% else %}Log out{% endif %}</button>
         </form>
       </div>
       <div class="brand">

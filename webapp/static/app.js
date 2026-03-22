@@ -561,6 +561,24 @@ async function refreshFigures() {
   }
 }
 
+async function unlockExistingFiguresIfPresent() {
+  const output = el("output_dir").value.trim() || "results";
+  try {
+    const resp = await fetch(`/api/figures?output_dir=${encodeURIComponent(output)}`);
+    const data = await resp.json();
+    if (!resp.ok) {
+      return;
+    }
+    if (Array.isArray(data.figures) && data.figures.length > 0) {
+      figuresUnlocked = true;
+      updateFigureRefreshState();
+      await refreshFigures();
+    }
+  } catch {
+    // Ignore preload failures; normal run flow still works.
+  }
+}
+
 el("scan_btn").addEventListener("click", scanRoot);
 el("run_btn").addEventListener("click", runPipeline);
 el("refresh_figs").addEventListener("click", () => {
@@ -581,6 +599,7 @@ registerSetupPersistenceHandlers();
 persistSetupCookie();
 clearFigureList();
 updateFigureRefreshState();
+unlockExistingFiguresIfPresent();
 
 el("preview").addEventListener("error", () => {
   setPreviewState(null);
