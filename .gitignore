@@ -12,3 +12,10 @@ results/figures/*
 *.sqlite3
 *.db
 deploy/*.env
+
+# Never commit manuscript datasets copied onto local machines
+TrevisanWang2024/
+ScreenResults/
+PrPScreen_raw_data/
+PrP_genes_and_NT_ordered_AguzziLab.xlsx
+Layout.xlsx
