@@ -111,6 +111,17 @@ const wellSelector = (() => {
     updateSelectionCount();
   }
 
+  function removeAssignmentFromSelected() {
+    if (selected.size === 0) return;
+    for (const wid of selected) {
+      delete assignments[wid];
+    }
+    selected.clear();
+    refreshAll();
+    updateSelectionCount();
+    updateSummary();
+  }
+
   function updateSelectionCount() {
     const badge = document.getElementById("ws-sel-count");
     if (badge) badge.textContent = selected.size > 0 ? `${selected.size} selected` : "";
@@ -343,6 +354,7 @@ const wellSelector = (() => {
     // Role buttons
     document.getElementById("ws-btn-nt")?.addEventListener("click", () => assignRole("NT"));
     document.getElementById("ws-btn-pos")?.addEventListener("click", () => assignRole("pos_ctrl"));
+    document.getElementById("ws-btn-remove-assign")?.addEventListener("click", removeAssignmentFromSelected);
     document.getElementById("ws-btn-clear-sel")?.addEventListener("click", clearSelection);
     document.getElementById("ws-btn-clear-all")?.addEventListener("click", clearAllControls);
 

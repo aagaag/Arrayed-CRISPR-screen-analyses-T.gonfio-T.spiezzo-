@@ -22,7 +22,6 @@ const SETUP_INPUT_IDS = [
   "output_dir",
   "skip_fret",
   "skip_glo",
-  "heatmap_plate",
 ];
 
 const FIGURE_LABELS = {
@@ -266,7 +265,7 @@ function readSetupFromForm() {
     output_dir: el("output_dir").value.trim(),
     skip_fret: Number(el("skip_fret").value),
     skip_glo: Number(el("skip_glo").value),
-    heatmap_plate: el("heatmap_plate").value.trim(),
+    heatmap_plate: "all",
   };
 }
 
@@ -300,7 +299,7 @@ function restoreSetupFromCookie() {
   setTextIfPresent("layout_csv", saved.layout_csv);
   setTextIfPresent("genomics_excel", saved.genomics_excel);
   setTextIfPresent("output_dir", saved.output_dir);
-  setTextIfPresent("heatmap_plate", saved.heatmap_plate);
+  // heatmap_plate is hardcoded to "all"
   setNumberIfPresent("skip_fret", saved.skip_fret);
   setNumberIfPresent("skip_glo", saved.skip_glo);
   return true;
@@ -342,6 +341,9 @@ function applyModeUi() {
   document.querySelectorAll(".arrayed-only").forEach((node) => {
     node.classList.toggle("hidden", pooled);
   });
+  document.querySelectorAll(".pooled-only").forEach((node) => {
+    node.classList.toggle("hidden", !pooled);
+  });
 }
 
 function readForm() {
@@ -353,13 +355,39 @@ function readForm() {
     output_dir: el("output_dir").value.trim(),
     skip_fret: Number(el("skip_fret").value),
     skip_glo: Number(el("skip_glo").value),
-    heatmap_plate: el("heatmap_plate").value.trim(),
+    heatmap_plate: "all",
     debug: true,
   };
   if (typeof wellSelector !== "undefined") {
     const ctrls = wellSelector.getControlAssignments();
     if (ctrls) payload.control_overrides = ctrls;
   }
+  const ntPat = el("pooled_nt_patterns");
+  const posPat = el("pooled_pos_patterns");
+  if (ntPat && ntPat.value.trim()) payload.nt_patterns = ntPat.value.trim();
+  if (posPat && posPat.value.trim()) payload.pos_patterns = posPat.value.trim();
+  const refSel = el("pooled_ref_cols");
+  const treatSel = el("pooled_treat_cols");
+  const pooledSheet = el("pooled_sheet");
+  if (refSel) {
+    const selected = Array.from(refSel.selectedOptions).map((o) => o.value);
+    if (selected.length > 0) {
+      payload.reference_cols = selected.join(", ");
+    } else {
+      const manual = el("pooled_ref_manual");
+      if (manual && manual.value.trim()) payload.reference_cols = manual.value.trim();
+    }
+  }
+  if (treatSel) {
+    const selected = Array.from(treatSel.selectedOptions).map((o) => o.value);
+    if (selected.length > 0) {
+      payload.treatment_cols = selected.join(", ");
+    } else {
+      const manual = el("pooled_treat_manual");
+      if (manual && manual.value.trim()) payload.treatment_cols = manual.value.trim();
+    }
+  }
+  if (pooledSheet && pooledSheet.value.trim()) payload.pooled_sheet = pooledSheet.value.trim();
   return payload;
 }
 
@@ -584,6 +612,216 @@ async function unlockExistingFiguresIfPresent() {
   }
 }
 
+// ── Folder/file browser ───────────────────────────────────────────────
+let _browseTargetInput = null;
+let _browseMode = "folder"; // "folder" or "file"
+let _browseFileExts = [];
+
+function ensureBrowseModal() {
+  if (document.getElementById("browse-modal")) return;
+  const modal = document.createElement("div");
+  modal.id = "browse-modal";
+  modal.className = "browse-modal hidden";
+  modal.innerHTML = `
+    <div class="browse-dialog">
+      <div class="browse-header">
+        <span id="browse-title" style="font-weight:700;">Browse</span>
+        <button id="browse-close" type="button" class="ghost" style="width:auto;padding:4px 8px;">✕</button>
+      </div>
+      <div class="browse-path-row">
+        <button id="browse-home" type="button" class="secondary" style="font-size:12px;padding:4px 8px;">⌂ Home</button>
+        <button id="browse-up" type="button" class="secondary" style="font-size:12px;padding:4px 8px;">↑ Up</button>
+        <span id="browse-current" style="font-size:12px;color:#475569;word-break:break-all;flex:1;"></span>
+      </div>
+      <ul id="browse-list" class="browse-list"></ul>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
+        <button id="browse-select" type="button" style="font-size:12px;">Select This Folder</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  document.getElementById("browse-close").addEventListener("click", closeBrowser);
+  document.getElementById("browse-home").addEventListener("click", () => loadBrowse(""));
+  document.getElementById("browse-up").addEventListener("click", () => {
+    const parent = document.getElementById("browse-current").dataset.parent;
+    if (parent) loadBrowse(parent);
+  });
+  document.getElementById("browse-select").addEventListener("click", () => {
+    const cur = document.getElementById("browse-current").dataset.path;
+    if (cur && _browseTargetInput) _browseTargetInput.value = cur;
+    closeBrowser();
+    persistSetupCookie();
+  });
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeBrowser();
+  });
+}
+
+function closeBrowser() {
+  const modal = document.getElementById("browse-modal");
+  if (modal) modal.classList.add("hidden");
+}
+
+async function loadBrowse(path) {
+  const showFiles = _browseMode === "file";
+  const resp = await fetch("/api/browse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: path || "", show_files: showFiles, file_extensions: _browseFileExts }),
+  });
+  if (!resp.ok) return;
+  const data = await resp.json();
+  const curSpan = document.getElementById("browse-current");
+  curSpan.textContent = data.current;
+  curSpan.dataset.path = data.current;
+  curSpan.dataset.parent = data.parent || "";
+
+  const selectBtn = document.getElementById("browse-select");
+  selectBtn.style.display = _browseMode === "folder" ? "" : "none";
+
+  const list = document.getElementById("browse-list");
+  list.innerHTML = "";
+  for (const dir of data.dirs) {
+    const li = document.createElement("li");
+    li.textContent = "\uD83D\uDCC1 " + dir;
+    li.addEventListener("click", () => loadBrowse(data.current + "/" + dir));
+    list.appendChild(li);
+  }
+  if (showFiles && data.files) {
+    for (const file of data.files) {
+      const li = document.createElement("li");
+      li.textContent = "\uD83D\uDCC4 " + file;
+      li.style.color = "#1e293b";
+      li.addEventListener("click", () => {
+        if (_browseTargetInput) _browseTargetInput.value = data.current + "/" + file;
+        closeBrowser();
+        persistSetupCookie();
+      });
+      list.appendChild(li);
+    }
+  }
+  if (data.dirs.length === 0 && (!data.files || data.files.length === 0)) {
+    const li = document.createElement("li");
+    li.textContent = "(empty)";
+    li.style.color = "#94a3b8";
+    li.style.cursor = "default";
+    list.appendChild(li);
+  }
+}
+
+function openBrowser(targetInput, mode, startPath, fileExts) {
+  ensureBrowseModal();
+  _browseTargetInput = targetInput;
+  _browseMode = mode || "folder";
+  _browseFileExts = fileExts || [];
+  const title = document.getElementById("browse-title");
+  if (title) title.textContent = mode === "file" ? "Select File" : "Browse Folders";
+  document.getElementById("browse-modal").classList.remove("hidden");
+  loadBrowse(startPath || "");
+}
+
+// ── Pooled table column loader ─────────────────────────────────────────
+async function loadPooledColumns(sheetOverride) {
+  const feedback = el("load_pooled_feedback");
+  const tablePath = el("raw_dir") ? el("raw_dir").value.trim() : "";
+  if (!tablePath) {
+    if (feedback) feedback.textContent = "Fill in the Pooled table field first.";
+    return;
+  }
+  if (feedback) feedback.textContent = "Loading...";
+  try {
+    const sheetSel = el("pooled_sheet");
+    const sheet = sheetOverride || (sheetSel ? sheetSel.value : "");
+    const resp = await fetch("/api/pooled-columns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: tablePath, sheet }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      if (feedback) feedback.textContent = data.detail || "Failed to load.";
+      return;
+    }
+    // Populate sheet dropdown
+    if (sheetSel && data.sheets.length > 0) {
+      sheetSel.innerHTML = "";
+      for (const s of data.sheets) {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = s;
+        if (s === data.selected_sheet) opt.selected = true;
+        sheetSel.appendChild(opt);
+      }
+    } else if (sheetSel) {
+      sheetSel.innerHTML = '<option value="">(not an Excel file)</option>';
+    }
+    // Populate column selects
+    const refSel = el("pooled_ref_cols");
+    const treatSel = el("pooled_treat_cols");
+    for (const sel of [refSel, treatSel]) {
+      if (!sel) continue;
+      sel.innerHTML = "";
+      for (const col of data.columns) {
+        const opt = document.createElement("option");
+        opt.value = col;
+        opt.textContent = col;
+        sel.appendChild(opt);
+      }
+    }
+    // Pre-fill control gene patterns
+    const ntInput = el("pooled_nt_patterns");
+    if (ntInput && data.nt_pattern && !ntInput.value.trim()) {
+      ntInput.value = data.nt_pattern;
+    }
+    const posInput = el("pooled_pos_patterns");
+    if (posInput && data.pos_pattern && !posInput.value.trim()) {
+      posInput.value = data.pos_pattern;
+    }
+    if (feedback) {
+      feedback.textContent = `Loaded ${data.columns.length} columns` + (data.selected_sheet ? ` from sheet "${data.selected_sheet}"` : "");
+    }
+  } catch (err) {
+    if (feedback) feedback.textContent = `Error: ${err.message}`;
+  }
+}
+
+el("load_pooled_cols_btn")?.addEventListener("click", () => loadPooledColumns());
+// Reload columns when sheet changes
+el("pooled_sheet")?.addEventListener("change", () => loadPooledColumns(el("pooled_sheet").value));
+
+// Manual column addition
+function addManualColumns(inputId, selectId) {
+  const input = el(inputId);
+  const select = el(selectId);
+  if (!input || !select) return;
+  const names = input.value.split(",").map((s) => s.trim()).filter(Boolean);
+  for (const name of names) {
+    // Add as option if not already present
+    const existing = Array.from(select.options).find((o) => o.value === name);
+    if (existing) {
+      existing.selected = true;
+    } else {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      opt.selected = true;
+      select.appendChild(opt);
+    }
+  }
+  input.value = "";
+}
+
+el("pooled_ref_add_btn")?.addEventListener("click", () => addManualColumns("pooled_ref_manual", "pooled_ref_cols"));
+el("pooled_treat_add_btn")?.addEventListener("click", () => addManualColumns("pooled_treat_manual", "pooled_treat_cols"));
+
+el("browse_btn")?.addEventListener("click", () => {
+  openBrowser(el("data_root"), "folder", el("data_root").value.trim());
+});
+el("raw_browse_btn")?.addEventListener("click", () => {
+  const start = el("raw_dir").value.trim() || el("data_root").value.trim();
+  openBrowser(el("raw_dir"), "file", start, ["csv", "tsv", "txt", "xlsx", "xls"]);
+});
 el("scan_btn").addEventListener("click", scanRoot);
 el("run_btn").addEventListener("click", runPipeline);
 el("refresh_figs").addEventListener("click", () => {
@@ -596,6 +834,65 @@ el("refresh_figs").addEventListener("click", () => {
 document.querySelectorAll('input[name="mode"]').forEach((node) => {
   node.addEventListener("change", applyModeUi);
 });
+
+// ── Pooled control gene pattern live matching ─────────────────────────
+let _geneMatchTimer = null;
+function scheduleGeneMatch(inputId, matchSpanId) {
+  if (_geneMatchTimer) clearTimeout(_geneMatchTimer);
+  _geneMatchTimer = setTimeout(() => runGeneMatch(inputId, matchSpanId), 400);
+}
+
+async function runGeneMatch(inputId, matchSpanId) {
+  const input = el(inputId);
+  const span = el(matchSpanId);
+  if (!input || !span) return;
+  const patterns = input.value.trim();
+  const tablePath = el("raw_dir") ? el("raw_dir").value.trim() : "";
+  if (!tablePath) {
+    span.textContent = "";
+    return;
+  }
+  if (!patterns) {
+    // Show total genes when no pattern entered
+    try {
+      const resp = await fetch("/api/gene-matches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: tablePath, patterns: "" }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        span.textContent = `${data.total_genes} genes in table`;
+        span.title = "";
+      }
+    } catch { /* ignore */ }
+    return;
+  }
+  try {
+    const resp = await fetch("/api/gene-matches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: tablePath, patterns }),
+    });
+    if (!resp.ok) {
+      span.textContent = "error";
+      span.title = "";
+      return;
+    }
+    const data = await resp.json();
+    const n = data.genes.length;
+    span.textContent = n > 0 ? `${n} match${n > 1 ? "es" : ""}` : "no matches";
+    span.title = data.genes.slice(0, 30).join(", ") + (data.genes.length > 30 ? ", ..." : "");
+  } catch {
+    span.textContent = "";
+    span.title = "";
+  }
+}
+
+const _pooledNt = el("pooled_nt_patterns");
+const _pooledPos = el("pooled_pos_patterns");
+if (_pooledNt) _pooledNt.addEventListener("input", () => scheduleGeneMatch("pooled_nt_patterns", "pooled_nt_matches"));
+if (_pooledPos) _pooledPos.addEventListener("input", () => scheduleGeneMatch("pooled_pos_patterns", "pooled_pos_matches"));
 
 restoreSetupFromCookie();
 setStatus("Idle", "idle");

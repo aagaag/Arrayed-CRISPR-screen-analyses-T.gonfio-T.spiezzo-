@@ -42,16 +42,22 @@
         </fieldset>
         <div></div>
 
-        <label>Data root
+        <label class="arrayed-only">Data root
           <input id="data_root" value="{{ defaults.data_root }}" />
         </label>
-        <button id="scan_btn" class="secondary">Auto-fill Paths</button>
+        <div class="arrayed-only" style="display:flex; gap:6px;">
+          <button id="browse_btn" class="ghost" type="button" title="Browse folders">&#128193;</button>
+          <button id="scan_btn" class="secondary">Auto-fill Paths</button>
+        </div>
 
         <label><span id="raw_label_text">Raw dir/file</span>
           <input id="raw_dir" list="raw_list" />
           <datalist id="raw_list"></datalist>
         </label>
-        <button id="raw_hint" class="ghost" type="button" title="Arrayed: folder with raw exports. Pooled: one pooled table file (CSV/TSV/TXT/XLSX).">?</button>
+        <div style="display:flex; gap:6px;">
+          <button id="raw_browse_btn" class="ghost pooled-only" type="button" title="Browse for pooled table file">&#128193;</button>
+          <button id="raw_hint" class="ghost" type="button" title="Arrayed: folder with raw exports. Pooled: one pooled table file (CSV/TSV/TXT/XLSX).">?</button>
+        </div>
 
         <label class="arrayed-only"><span>Layout CSV</span>
           <input id="layout_csv" list="layout_list" />
@@ -70,44 +76,100 @@
         </label>
         <div></div>
 
-        <div></div>
-        <div></div>
-
-        <label class="arrayed-only">Skip FRET
-          <input id="skip_fret" type="number" value="{{ defaults.skip_fret }}" />
-        </label>
-        <label class="arrayed-only">Skip GLO
-          <input id="skip_glo" type="number" value="{{ defaults.skip_glo }}" />
-        </label>
-        <label class="arrayed-only">Heatmap plate selector (compatibility)
-          <input id="heatmap_plate" value="{{ defaults.heatmap_plate }}" placeholder="all" />
-        </label>
       </div>
 
-      <details id="ws-container" class="ws-section arrayed-only">
-        <summary>Control Well Selector</summary>
-        <div class="ws-body">
-          <div class="ws-toolbar">
-            <select id="ws-format">
-              <option value="384" selected>384-well</option>
-              <option value="96">96-well</option>
-            </select>
-            <span id="ws-sel-count"></span>
-            <button id="ws-btn-nt" type="button" class="ws-btn-nt">Assign NT</button>
-            <button id="ws-btn-pos" type="button" class="ws-btn-pos">Assign POS</button>
-            <button id="ws-btn-load-layout" type="button" class="secondary" style="font-size:12px;">Load from Layout</button>
-            <button id="ws-btn-clear-sel" type="button" class="secondary" style="font-size:12px;">Clear Selection</button>
-            <button id="ws-btn-clear-all" type="button" class="secondary" style="font-size:12px;">Clear All</button>
-          </div>
-          <div class="ws-spec-row">
-            <input id="ws-spec-input" type="text" placeholder="e.g. A01-A12, col:5, C-H:13" />
-            <button id="ws-spec-btn" type="button" class="secondary" style="font-size:12px;">Select</button>
-            <span id="ws-spec-feedback"></span>
-          </div>
-          <div id="ws-grid"></div>
-          <p id="ws-summary"></p>
+      <div id="ws-container" class="ws-section arrayed-only">
+        <h3 style="font-size:13px; margin:10px 0 6px 0;">Control Well Selector</h3>
+        <div class="ws-toolbar">
+          <select id="ws-format">
+            <option value="384" selected>384-well</option>
+            <option value="96">96-well</option>
+          </select>
+          <span id="ws-sel-count"></span>
+          <button id="ws-btn-nt" type="button" class="ws-btn-nt">Assign NT</button>
+          <button id="ws-btn-pos" type="button" class="ws-btn-pos">Assign POS</button>
+          <button id="ws-btn-remove-assign" type="button" class="secondary" style="font-size:12px;">Remove Assignment</button>
+          <button id="ws-btn-load-layout" type="button" class="secondary" style="font-size:12px;">Load from Layout</button>
+          <button id="ws-btn-clear-sel" type="button" class="secondary" style="font-size:12px;">Clear Selection</button>
+          <button id="ws-btn-clear-all" type="button" class="secondary" style="font-size:12px;">Clear All</button>
+        </div>
+        <div class="ws-spec-row">
+          <input id="ws-spec-input" type="text" placeholder="e.g. A01-A12, col:5, C-H:13" />
+          <button id="ws-spec-btn" type="button" class="secondary" style="font-size:12px;">Select</button>
+          <span id="ws-spec-feedback"></span>
+        </div>
+        <div id="ws-grid"></div>
+        <p id="ws-summary"></p>
+      </div>
+
+      <details class="ws-section arrayed-only">
+        <summary>Advanced Settings</summary>
+        <p style="font-size:12px; color:#475569; margin:4px 0 8px 0;">
+          <b>Skip FRET</b>: header rows to skip in TR-FRET (time-resolved FRET) plate reader export CSVs before the 16&times;24 measurement grid. Default 38 matches the export profile used for the Trevisan/Wang PrP<sup>C</sup> screen.<br>
+          <b>Skip GLO</b>: header rows to skip in CellTiter-Glo (luminescence viability) export CSVs. Default 9.<br>
+          Change these only if your plate reader uses a different export format.
+        </p>
+        <div class="ws-body" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <label>Skip FRET
+            <input id="skip_fret" type="number" value="{{ defaults.skip_fret }}" />
+          </label>
+          <label>Skip GLO
+            <input id="skip_glo" type="number" value="{{ defaults.skip_glo }}" />
+          </label>
         </div>
       </details>
+
+      <div class="ws-section pooled-only">
+        <h3 style="font-size:13px; margin:10px 0 6px 0;">Pooled Replicate Columns</h3>
+        <p style="font-size:12px; color:#475569; margin:0 0 8px 0;">
+          Select which columns hold replicate counts. Click <b>Load Columns</b> to read column names from the pooled table, then select Reference (baseline) and Treatment (condition) columns.
+        </p>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+          <button id="load_pooled_cols_btn" type="button" class="secondary" style="font-size:12px;">Load Columns</button>
+          <span id="load_pooled_feedback" style="font-size:11px; color:#475569;"></span>
+        </div>
+        <div class="pooled-ctrl-row">
+          <label class="pooled-ctrl-label">Excel sheet
+            <select id="pooled_sheet"><option value="">(load columns first)</option></select>
+          </label>
+        </div>
+        <div style="margin-top:8px;">
+          <label class="pooled-ctrl-label" style="flex:1;">Reference columns (baseline)
+            <select id="pooled_ref_cols" multiple size="5" style="width:100%;font-size:12px;"></select>
+          </label>
+          <div style="display:flex; gap:6px; margin-top:4px;">
+            <input id="pooled_ref_manual" type="text" placeholder="Or type column names (comma-separated)" style="flex:1;font-size:12px;" />
+            <button id="pooled_ref_add_btn" type="button" class="secondary" style="font-size:11px;padding:4px 8px;">Add</button>
+          </div>
+        </div>
+        <div style="margin-top:8px;">
+          <label class="pooled-ctrl-label" style="flex:1;">Treatment columns (condition of interest)
+            <select id="pooled_treat_cols" multiple size="5" style="width:100%;font-size:12px;"></select>
+          </label>
+          <div style="display:flex; gap:6px; margin-top:4px;">
+            <input id="pooled_treat_manual" type="text" placeholder="Or type column names (comma-separated)" style="flex:1;font-size:12px;" />
+            <button id="pooled_treat_add_btn" type="button" class="secondary" style="font-size:11px;padding:4px 8px;">Add</button>
+          </div>
+        </div>
+        <p style="font-size:11px; color:#94a3b8; margin:4px 0 0 0;">Hold Ctrl/Cmd to select multiple from the list, or type names manually and click Add.</p>
+
+        <h3 style="font-size:13px; margin:14px 0 6px 0;">Control Gene Patterns</h3>
+        <p style="font-size:12px; color:#475569; margin:0 0 8px 0;">
+          Enter gene names separated by commas. Use <code>*</code> as a wildcard (e.g. <code>nt*</code> matches nt1, nt2, ...).
+        </p>
+        <div class="pooled-ctrl-row">
+          <label class="pooled-ctrl-label" style="color:#2ecc71;">NT controls
+            <input id="pooled_nt_patterns" type="text" placeholder="e.g. nt*, non-targeting, control_5" />
+          </label>
+          <span id="pooled_nt_matches" class="pooled-ctrl-matches"></span>
+        </div>
+        <div class="pooled-ctrl-row">
+          <label class="pooled-ctrl-label" style="color:#3498db;">POS controls
+            <input id="pooled_pos_patterns" type="text" placeholder="e.g. prnp, positive_control" />
+          </label>
+          <span id="pooled_pos_matches" class="pooled-ctrl-matches"></span>
+        </div>
+      </div>
 
       <p id="mode_note" class="mode-note"></p>
 

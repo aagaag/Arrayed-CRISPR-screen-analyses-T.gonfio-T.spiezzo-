@@ -259,6 +259,11 @@ class RunRequest(BaseModel):
     heatmap_plate: str = DEFAULT_HEATMAP_PLATE
     debug: bool = False
     control_overrides: dict[str, str] | None = None
+    nt_patterns: str = ""
+    pos_patterns: str = ""
+    reference_cols: str = ""
+    treatment_cols: str = ""
+    pooled_sheet: str = ""
 
 
 class ScanRequest(BaseModel):
@@ -861,10 +866,24 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
             "--output-dir",
             str(output_abs),
         ]
+        if req.pooled_sheet.strip():
+            pooled_cmd.extend(["--sheet", req.pooled_sheet.strip()])
+        if req.reference_cols.strip():
+            pooled_cmd.extend(["--reference-cols"] + [c.strip() for c in req.reference_cols.split(",") if c.strip()])
+        if req.treatment_cols.strip():
+            pooled_cmd.extend(["--treatment-cols"] + [c.strip() for c in req.treatment_cols.split(",") if c.strip()])
         if str(req.genomics_excel).strip():
             pooled_cmd.extend(["--genomics-excel", str(req.genomics_excel)])
             if str(req.sheet).strip():
                 pooled_cmd.extend(["--skyline-sheet", str(req.sheet).strip()])
+        if req.nt_patterns.strip():
+            nt_regex = _user_patterns_to_regex(req.nt_patterns)
+            if nt_regex:
+                pooled_cmd.extend(["--nt-regex", nt_regex])
+        if req.pos_patterns.strip():
+            pos_regex = _user_patterns_to_regex(req.pos_patterns)
+            if pos_regex:
+                pooled_cmd.extend(["--pos-regex", pos_regex])
         if req.debug:
             pooled_cmd.append("--debug")
         steps = [("Run pooled pipeline", pooled_cmd)]
@@ -1607,6 +1626,311 @@ def api_layout_controls(body: LayoutControlsRequest, request: Request) -> dict[s
             assignments[_well_num_to_id(wn)] = "pos_ctrl"
 
     return {"assignments": assignments}
+
+
+def _user_patterns_to_regex(patterns: str) -> str:
+    """Convert comma-separated user patterns (exact names or prefix*) to a single regex.
+
+    Examples:
+        "nt1, nt2"       → "(?i)^(?:nt1|nt2)$"
+        "nt*"            → "(?i)^(?:nt.*)"
+        "nt*, control_5" → "(?i)^(?:nt.*)|^(?:control_5)$"
+    """
+    parts: list[str] = []
+    for token in patterns.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        escaped = re.escape(token)
+        if token.endswith("*"):
+            # Prefix wildcard: nt* → ^nt.*
+            prefix = re.escape(token[:-1])
+            parts.append(f"^(?:{prefix}.*)")
+        else:
+            # Exact match
+            parts.append(f"^(?:{escaped})$")
+    if not parts:
+        return ""
+    return "(?i)" + "|".join(parts)
+
+
+class GeneMatchRequest(BaseModel):
+    path: str
+    patterns: str
+    sheet: str = ""
+
+
+@app.post("/api/gene-matches")
+def api_gene_matches(body: GeneMatchRequest, request: Request) -> dict[str, Any]:
+    """Return gene names from a pooled table that match the user's patterns."""
+    _require_user(request)
+    import pandas as pd
+
+    p = Path(body.path)
+    if not p.exists():
+        raise HTTPException(status_code=400, detail=f"File not found: {body.path}")
+
+    try:
+        suffix = p.suffix.lower()
+        if suffix in {".xlsx", ".xls", ".xlsm"}:
+            sheet = body.sheet.strip() or None
+            df = pd.read_excel(p, sheet_name=sheet) if sheet else pd.read_excel(p)
+        else:
+            df = pd.read_csv(p, sep=None, engine="python")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot read file: {exc}")
+
+    # Find gene column
+    cols_lower = {str(c).strip().lower(): c for c in df.columns}
+    gene_col = None
+    for candidate in ("gene_symbol", "gene", "genesymbol", "gene_tss", "all_targeted_genes", "label"):
+        if candidate in cols_lower:
+            gene_col = cols_lower[candidate]
+            break
+    if gene_col is None:
+        return {"genes": [], "total_genes": 0}
+
+    all_genes = sorted(df[gene_col].dropna().astype(str).str.strip().unique())
+    regex = _user_patterns_to_regex(body.patterns)
+    if not regex:
+        return {"genes": [], "total_genes": len(all_genes), "all_genes": all_genes[:500]}
+
+    try:
+        pattern = re.compile(regex)
+    except re.error:
+        return {"genes": [], "total_genes": len(all_genes)}
+
+    matched = [g for g in all_genes if pattern.search(g)]
+    return {"genes": matched, "total_genes": len(all_genes)}
+
+
+class PooledColumnsRequest(BaseModel):
+    path: str
+    sheet: str = ""
+
+
+@app.post("/api/pooled-columns")
+def api_pooled_columns(body: PooledColumnsRequest, request: Request) -> dict[str, Any]:
+    """Return sheet names and column names from a pooled table."""
+    _require_user(request)
+    import pandas as pd
+
+    p = Path(body.path)
+    if not p.exists():
+        raise HTTPException(status_code=400, detail=f"File not found: {body.path}")
+
+    try:
+        suffix = p.suffix.lower()
+        sheets: list[str] = []
+        if suffix in {".xlsx", ".xls", ".xlsm"}:
+            xls = pd.ExcelFile(p)
+            sheets = list(xls.sheet_names)
+            sheet = body.sheet.strip() if body.sheet.strip() else sheets[0]
+            df = pd.read_excel(xls, sheet_name=sheet, nrows=0)
+        else:
+            sheet = ""
+            df = pd.read_csv(p, sep=None, engine="python", nrows=0)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot read file: {exc}")
+
+    columns = [str(c) for c in df.columns]
+
+    # Also detect control genes from the full data for pre-filling
+    nt_pattern = ""
+    pos_pattern = ""
+    try:
+        if suffix in {".xlsx", ".xls", ".xlsm"}:
+            full_df = pd.read_excel(p, sheet_name=sheet)
+        else:
+            full_df = pd.read_csv(p, sep=None, engine="python")
+        gene_col = None
+        for candidate in ("gene_symbol", "gene", "genesymbol", "gene_tss", "label"):
+            for c in columns:
+                if str(c).strip().lower() == candidate:
+                    gene_col = c
+                    break
+            if gene_col:
+                break
+        if gene_col:
+            all_genes = sorted(full_df[gene_col].dropna().astype(str).str.strip().unique())
+            nt_re = re.compile(r"(?i)(?:^control(?:_|$)|^nt(?:_|$)|non[-_ ]?target|negative[_ ]?control|nt[_ -]?ctrl)")
+            pos_re = re.compile(r"(?i)(?:^prnp$|^ovine_prnp$|positive[_ ]?control|pos[_ -]?ctrl)")
+            nt_genes = [g for g in all_genes if nt_re.search(g)]
+            pos_genes = [g for g in all_genes if pos_re.search(g)]
+            # Compact pattern
+            if nt_genes:
+                prefix = os.path.commonprefix(nt_genes)
+                nt_pattern = prefix + "*" if len(prefix) >= 3 and len(nt_genes) >= 3 else ", ".join(nt_genes[:20])
+            if pos_genes:
+                pos_pattern = ", ".join(pos_genes[:20])
+    except Exception:
+        pass
+
+    return {
+        "sheets": sheets,
+        "selected_sheet": sheet,
+        "columns": columns,
+        "nt_pattern": nt_pattern,
+        "pos_pattern": pos_pattern,
+    }
+
+
+class DetectPooledRequest(BaseModel):
+    path: str
+    sheet: str = ""
+
+
+@app.post("/api/detect-pooled")
+def api_detect_pooled(body: DetectPooledRequest, request: Request) -> dict[str, Any]:
+    """Auto-detect reference/treatment columns and control genes from a pooled table."""
+    _require_user(request)
+    import pandas as pd
+
+    p = Path(body.path)
+    if not p.exists():
+        raise HTTPException(status_code=400, detail=f"File not found: {body.path}")
+
+    try:
+        suffix = p.suffix.lower()
+        if suffix in {".xlsx", ".xls", ".xlsm"}:
+            xls = pd.ExcelFile(p)
+            sheet = body.sheet.strip() or None
+            if not sheet:
+                # Pick preferred sheet
+                _preferred = ("primary_rawdata", "primary_raw", "rawdata", "davide_analysis")
+                name_lookup = {n.lower(): n for n in xls.sheet_names}
+                for candidate in _preferred:
+                    if candidate in name_lookup:
+                        sheet = name_lookup[candidate]
+                        break
+                if not sheet:
+                    sheet = xls.sheet_names[0]
+            df = pd.read_excel(xls, sheet_name=sheet)
+            sheets = list(xls.sheet_names)
+        else:
+            df = pd.read_csv(p, sep=None, engine="python")
+            sheet = None
+            sheets = []
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot read file: {exc}")
+
+    columns = [str(c) for c in df.columns]
+
+    # Detect reference/treatment columns using common patterns
+    ref_patterns = [
+        r"(?i)^Negative_R\d+$",
+        r"(?i)(?:ref|reference|baseline|control|untreated|low|input|plasmid).*(?:rep|_R)\d+",
+        r"(?i)^Count.*(?:low|neg|ref|baseline|input|unsorted).*rep\d+",
+    ]
+    treat_patterns = [
+        r"(?i)^Positive_R\d+$",
+        r"(?i)(?:treat|treatment|positive|high|sorted|screen).*(?:rep|_R)\d+",
+        r"(?i)^Count.*(?:high|pos|treat|sorted|screen).*rep\d+",
+    ]
+
+    def _detect_cols(patterns: list[str]) -> list[str]:
+        for pattern in patterns:
+            regex = re.compile(pattern)
+            hits = [c for c in columns if regex.search(c)]
+            if hits:
+                return sorted(hits)
+        return []
+
+    ref_cols = _detect_cols(ref_patterns)
+    treat_cols = _detect_cols(treat_patterns)
+
+    # Detect control genes
+    gene_col = None
+    for candidate in ("gene_symbol", "gene", "genesymbol", "gene_tss", "label"):
+        for c in columns:
+            if str(c).strip().lower() == candidate:
+                gene_col = c
+                break
+        if gene_col:
+            break
+
+    nt_genes: list[str] = []
+    pos_genes: list[str] = []
+    if gene_col:
+        all_genes = sorted(df[gene_col].dropna().astype(str).str.strip().unique())
+        nt_regex = re.compile(
+            r"(?i)(?:^control(?:_|$)|^nt(?:_|$)|non[-_ ]?target|negative[_ ]?control|nt[_ -]?ctrl)"
+        )
+        pos_regex = re.compile(r"(?i)(?:^prnp$|^ovine_prnp$|positive[_ ]?control|pos[_ -]?ctrl)")
+        nt_genes = [g for g in all_genes if nt_regex.search(g)]
+        pos_genes = [g for g in all_genes if pos_regex.search(g)]
+
+    # Suggest compact patterns rather than listing every gene
+    def _compact_pattern(genes: list[str]) -> str:
+        if not genes:
+            return ""
+        # Check for a common prefix
+        if len(genes) >= 3:
+            prefix = os.path.commonprefix(genes)
+            if len(prefix) >= 3 and all(g.startswith(prefix) for g in genes):
+                return prefix + "*"
+        return ", ".join(genes[:20]) + (", ..." if len(genes) > 20 else "")
+
+    return {
+        "sheet": sheet,
+        "sheets": sheets,
+        "columns": columns,
+        "reference_cols": ref_cols,
+        "treatment_cols": treat_cols,
+        "nt_genes": nt_genes,
+        "pos_genes": pos_genes,
+        "nt_pattern": _compact_pattern(nt_genes),
+        "pos_pattern": _compact_pattern(pos_genes),
+        "nt_count": len(nt_genes),
+        "pos_count": len(pos_genes),
+    }
+
+
+class BrowseRequest(BaseModel):
+    path: str = ""
+    show_files: bool = False
+    file_extensions: list[str] = []
+
+
+@app.post("/api/browse")
+def api_browse(body: BrowseRequest, request: Request) -> dict[str, Any]:
+    """List subdirectories (and optionally files) of a given path."""
+    _require_user(request)
+    raw = (body.path or "").strip()
+    if not raw:
+        raw = str(Path.home())
+    target = Path(raw).expanduser().resolve()
+    if not target.exists():
+        while not target.exists() and target != target.parent:
+            target = target.parent
+    if not target.is_dir():
+        target = target.parent
+
+    try:
+        dirs = sorted(
+            [e.name for e in target.iterdir() if e.is_dir() and not e.name.startswith(".")],
+            key=str.lower,
+        )
+    except PermissionError:
+        dirs = []
+
+    files: list[str] = []
+    if body.show_files:
+        exts = {e.lower().lstrip(".") for e in body.file_extensions} if body.file_extensions else set()
+        try:
+            for e in sorted(target.iterdir(), key=lambda p: p.name.lower()):
+                if e.is_file() and not e.name.startswith("."):
+                    if not exts or e.suffix.lower().lstrip(".") in exts:
+                        files.append(e.name)
+        except PermissionError:
+            pass
+
+    return {
+        "current": str(target),
+        "parent": str(target.parent) if target != target.parent else None,
+        "dirs": dirs[:500],
+        "files": files[:500],
+    }
 
 
 @app.post("/api/scan")
