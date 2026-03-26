@@ -258,6 +258,7 @@ class RunRequest(BaseModel):
     skip_glo: int = DEFAULT_SKIP_GLO
     heatmap_plate: str = DEFAULT_HEATMAP_PLATE
     debug: bool = False
+    control_overrides: dict[str, str] | None = None
 
 
 class ScanRequest(BaseModel):
@@ -989,6 +990,74 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
     return steps, outputs
 
 
+def _apply_control_overrides(layout_csv: str, overrides: dict[str, str], output_dir: Path) -> str:
+    """Patch a layout CSV with user-defined control well assignments.
+
+    Returns the path to the patched layout file (written into *output_dir*).
+    If the overrides dict is empty the original path is returned unchanged.
+    """
+    if not overrides:
+        return layout_csv
+
+    import pandas as pd  # noqa: F811 – deferred to avoid top-level cost
+
+    path = Path(layout_csv)
+    suffix = path.suffix.lower()
+    if suffix in {".xlsx", ".xls", ".xlsm"}:
+        df = pd.read_excel(path)
+    else:
+        df = pd.read_csv(path)
+
+    # Build lookup: well_number (int where possible) → role
+    well_col = None
+    for col in df.columns:
+        if str(col).strip().lower() == "well_number_384":
+            well_col = col
+            break
+    if well_col is None:
+        return layout_csv  # cannot map wells – fall through to original
+
+    # Convert well IDs (e.g. "A01") to 1-based well numbers for a 384-well plate.
+    # A01 → 1, A02 → 2, …, A24 → 24, B01 → 25, etc.
+    nt_wells: set[int] = set()
+    pos_wells: set[int] = set()
+    for well_id, role in overrides.items():
+        m = re.fullmatch(r"([A-Pa-p])(\d{1,2})", str(well_id).strip())
+        if not m:
+            continue
+        row = ord(m.group(1).upper()) - 65  # 0-based
+        col = int(m.group(2)) - 1           # 0-based
+        well_num = row * 24 + col + 1       # 1-based sequential
+        role_lower = str(role).strip().lower()
+        if role_lower in {"nt", "non-targeting"}:
+            nt_wells.add(well_num)
+        elif role_lower in {"pos_ctrl", "positive", "pos"}:
+            pos_wells.add(well_num)
+
+    if not nt_wells and not pos_wells:
+        return layout_csv
+
+    well_nums = pd.to_numeric(df[well_col], errors="coerce")
+
+    # Reset existing control flags
+    for col_name in df.columns:
+        if str(col_name).strip().lower() == "is_nt_ctrl":
+            df[col_name] = False
+        elif str(col_name).strip().lower() == "is_pos_ctrl":
+            df[col_name] = False
+
+    # Apply new assignments
+    for col_name in df.columns:
+        if str(col_name).strip().lower() == "is_nt_ctrl":
+            df.loc[well_nums.isin(nt_wells), col_name] = True
+        elif str(col_name).strip().lower() == "is_pos_ctrl":
+            df.loc[well_nums.isin(pos_wells), col_name] = True
+
+    patched_path = output_dir / "layout_patched.csv"
+    df.to_csv(patched_path, index=False)
+    return str(patched_path)
+
+
 def _run_pipeline(run_id: str, req: RunRequest) -> None:
     state = RUNS[run_id]
     try:
@@ -1009,6 +1078,16 @@ def _run_pipeline(run_id: str, req: RunRequest) -> None:
                 f"sheet={req.sheet} | output_dir={req.output_dir} | "
                 f"heatmap_plate={req.heatmap_plate} | debug={req.debug}"
             )
+        # Apply GUI-defined control well overrides to the layout CSV before building pipeline steps.
+        if mode == "arrayed" and req.control_overrides:
+            output_dir = Path(req.output_dir)
+            output_abs = output_dir if output_dir.is_absolute() else (REPO_ROOT / output_dir)
+            output_abs.mkdir(parents=True, exist_ok=True)
+            original_layout = req.layout_csv
+            req.layout_csv = _apply_control_overrides(req.layout_csv, req.control_overrides, output_abs)
+            if req.layout_csv != original_layout:
+                n_overrides = len(req.control_overrides)
+                state.add(f"Applied {n_overrides} control well override(s) from well-selector → {req.layout_csv}")
         steps, outputs = _build_steps(req)
         total = len(steps)
         for idx, (name, cmd) in enumerate(steps, start=1):
@@ -1477,6 +1556,57 @@ def index(request: Request) -> HTMLResponse:
             }
         },
     )
+
+
+class LayoutControlsRequest(BaseModel):
+    path: str
+
+
+@app.post("/api/layout-controls")
+def api_layout_controls(body: LayoutControlsRequest, request: Request) -> dict[str, Any]:
+    """Read Is_NT_ctrl / Is_pos_ctrl from a layout file and return well-ID assignments."""
+    _require_user(request)
+    import pandas as pd
+
+    p = Path(body.path)
+    if not p.exists():
+        raise HTTPException(status_code=400, detail=f"File not found: {body.path}")
+    suffix = p.suffix.lower()
+    try:
+        if suffix in {".xlsx", ".xls", ".xlsm"}:
+            df = pd.read_excel(p)
+        else:
+            df = pd.read_csv(p)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot read file: {exc}")
+
+    cols_lower = {str(c).strip().lower(): c for c in df.columns}
+    well_col = cols_lower.get("well_number_384")
+    nt_col = cols_lower.get("is_nt_ctrl")
+    pos_col = cols_lower.get("is_pos_ctrl")
+    if well_col is None:
+        raise HTTPException(status_code=400, detail="Layout file missing Well_number_384 column.")
+
+    well_nums = pd.to_numeric(df[well_col], errors="coerce")
+    assignments: dict[str, str] = {}
+
+    def _well_num_to_id(n: int) -> str:
+        n0 = int(n) - 1
+        row = n0 // 24
+        col = n0 % 24
+        return chr(65 + row) + str(col + 1).zfill(2)
+
+    if nt_col is not None:
+        nt_mask = df[nt_col].astype(str).str.strip().str.lower().isin({"true", "1", "1.0"})
+        for wn in well_nums[nt_mask].dropna().unique():
+            assignments[_well_num_to_id(wn)] = "NT"
+
+    if pos_col is not None:
+        pos_mask = df[pos_col].astype(str).str.strip().str.lower().isin({"true", "1", "1.0"})
+        for wn in well_nums[pos_mask].dropna().unique():
+            assignments[_well_num_to_id(wn)] = "pos_ctrl"
+
+    return {"assignments": assignments}
 
 
 @app.post("/api/scan")

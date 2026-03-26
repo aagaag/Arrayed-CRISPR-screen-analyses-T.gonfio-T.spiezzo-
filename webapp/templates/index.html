@@ -83,6 +83,32 @@
           <input id="heatmap_plate" value="{{ defaults.heatmap_plate }}" placeholder="all" />
         </label>
       </div>
+
+      <details id="ws-container" class="ws-section arrayed-only">
+        <summary>Control Well Selector</summary>
+        <div class="ws-body">
+          <div class="ws-toolbar">
+            <select id="ws-format">
+              <option value="384" selected>384-well</option>
+              <option value="96">96-well</option>
+            </select>
+            <span id="ws-sel-count"></span>
+            <button id="ws-btn-nt" type="button" class="ws-btn-nt">Assign NT</button>
+            <button id="ws-btn-pos" type="button" class="ws-btn-pos">Assign POS</button>
+            <button id="ws-btn-load-layout" type="button" class="secondary" style="font-size:12px;">Load from Layout</button>
+            <button id="ws-btn-clear-sel" type="button" class="secondary" style="font-size:12px;">Clear Selection</button>
+            <button id="ws-btn-clear-all" type="button" class="secondary" style="font-size:12px;">Clear All</button>
+          </div>
+          <div class="ws-spec-row">
+            <input id="ws-spec-input" type="text" placeholder="e.g. A01-A12, col:5, C-H:13" />
+            <button id="ws-spec-btn" type="button" class="secondary" style="font-size:12px;">Select</button>
+            <span id="ws-spec-feedback"></span>
+          </div>
+          <div id="ws-grid"></div>
+          <p id="ws-summary"></p>
+        </div>
+      </details>
+
       <p id="mode_note" class="mode-note"></p>
 
       <div class="actions">
@@ -130,6 +156,7 @@
       <iframe id="preview_frame" title="Interactive figure preview"></iframe>
     </section>
   </main>
-  <script src="/static/app.js?v=20260223l"></script>
+  <script src="/static/well_selector.js?v=20260326"></script>
+  <script src="/static/app.js?v=20260326"></script>
 </body>
 </html>

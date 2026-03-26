@@ -345,7 +345,7 @@ function applyModeUi() {
 }
 
 function readForm() {
-  return {
+  const payload = {
     mode: selectedMode(),
     raw_dir: el("raw_dir").value.trim(),
     layout_csv: el("layout_csv").value.trim(),
@@ -356,6 +356,11 @@ function readForm() {
     heatmap_plate: el("heatmap_plate").value.trim(),
     debug: true,
   };
+  if (typeof wellSelector !== "undefined") {
+    const ctrls = wellSelector.getControlAssignments();
+    if (ctrls) payload.control_overrides = ctrls;
+  }
+  return payload;
 }
 
 async function scanRoot() {
