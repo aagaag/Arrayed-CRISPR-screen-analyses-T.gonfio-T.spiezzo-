@@ -326,3 +326,122 @@ pre#log {
   border: 1px solid #d6e0ea;
   background: #ffffff;
 }
+
+/* ── Well Selector ───────────────────────────────────────────────────── */
+
+.ws-section {
+  margin: 10px 0;
+}
+
+.ws-section summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+  color: #1e293b;
+  padding: 6px 0;
+}
+
+.ws-body {
+  margin-top: 8px;
+}
+
+.ws-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ws-toolbar select,
+.ws-toolbar input {
+  width: auto;
+  margin-top: 0;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+.ws-toolbar button {
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+.ws-btn-nt {
+  background: #2ecc71 !important;
+  color: #0f172a !important;
+}
+
+.ws-btn-pos {
+  background: #3498db !important;
+  color: white !important;
+}
+
+#ws-grid {
+  overflow-x: auto;
+  margin-bottom: 6px;
+}
+
+.ws-table {
+  border-collapse: collapse;
+  user-select: none;
+}
+
+.ws-table th {
+  font-size: 10px;
+  font-weight: 600;
+  color: #475569;
+  text-align: center;
+  padding: 1px 2px;
+  min-width: 18px;
+}
+
+.ws-table tr > th:first-child {
+  padding-right: 4px;
+  text-align: right;
+}
+
+.ws-well {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid #cbd5e180;
+  cursor: pointer;
+  transition: background-color 80ms ease, transform 80ms ease;
+}
+
+.ws-well:hover {
+  transform: scale(1.25);
+  border-color: #475569;
+}
+
+.ws-spec-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.ws-spec-row input {
+  flex: 1;
+  width: auto;
+  margin-top: 0;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+#ws-spec-feedback {
+  font-size: 11px;
+  color: #475569;
+}
+
+#ws-sel-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #b45309;
+}
+
+#ws-summary {
+  font-size: 12px;
+  color: #475569;
+  margin-top: 4px;
+}
