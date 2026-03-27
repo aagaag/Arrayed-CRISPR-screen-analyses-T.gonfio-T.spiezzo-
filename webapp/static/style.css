@@ -48,6 +48,18 @@ body {
   transition: background-color 180ms ease;
 }
 
+.workflow-card {
+  background: #eaf4ff;
+  border: 1px solid #c7ddf7;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.workflow-card h2 {
+  margin-bottom: 12px;
+}
+
 .preview-panel {
   display: flex;
   flex-direction: column;
@@ -85,6 +97,12 @@ h1, h2 {
   grid-template-columns: 1fr auto;
   gap: 10px;
   margin-bottom: 10px;
+}
+
+.field-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
 }
 
 label {
@@ -154,11 +172,56 @@ button.ghost {
   padding: 8px 0;
 }
 
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   margin: 12px 0;
+}
+
+.step-actions {
+  margin-top: 14px;
+}
+
+.step-actions h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.step-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.step-group {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid #cfe0f3;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.step-group h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #1e3a8a;
+}
+
+.step-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.step-buttons button {
+  text-align: left;
+  line-height: 1.25;
+  background: #2563eb;
 }
 
 .status {
@@ -192,6 +255,34 @@ button.ghost {
   margin: 0 0 8px 0;
   font-size: 12px;
   color: #475569;
+}
+
+.upload-note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.upload-status,
+.validation-status {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.upload-status.uploading,
+.validation-status.running {
+  color: #92400e;
+}
+
+.upload-status.success,
+.validation-status.success {
+  color: #166534;
+}
+
+.upload-status.error,
+.validation-status.error {
+  color: #b91c1c;
 }
 
 .hidden {

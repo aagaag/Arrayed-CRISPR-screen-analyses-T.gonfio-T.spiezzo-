@@ -28,61 +28,79 @@
         <h1>Automated CRISPR Screen Analysis</h1>
       </div>
 
-      <div class="grid">
-        <fieldset class="mode-control">
-          <legend>Mode</legend>
-          <label class="radio-option" for="mode_arrayed">
-            <input id="mode_arrayed" name="mode" type="radio" value="arrayed" {% if defaults.mode != "pooled" %}checked{% endif %} />
-            <span>Arrayed</span>
+      <section class="workflow-card">
+        <h2>Data Inputs</h2>
+        <div class="grid">
+          <fieldset class="mode-control">
+            <legend>Mode</legend>
+            <label class="radio-option" for="mode_arrayed">
+              <input id="mode_arrayed" name="mode" type="radio" value="arrayed" {% if defaults.mode != "pooled" %}checked{% endif %} />
+              <span>Arrayed</span>
+            </label>
+            <label class="radio-option" for="mode_pooled">
+              <input id="mode_pooled" name="mode" type="radio" value="pooled" {% if defaults.mode == "pooled" %}checked{% endif %} />
+              <span>Pooled</span>
+            </label>
+          </fieldset>
+          <div></div>
+
+          <label>Data root
+            <input id="data_root" value="{{ defaults.data_root }}" />
           </label>
-          <label class="radio-option" for="mode_pooled">
-            <input id="mode_pooled" name="mode" type="radio" value="pooled" {% if defaults.mode == "pooled" %}checked{% endif %} />
-            <span>Pooled</span>
+          <button id="scan_btn" class="secondary">Auto-fill Paths</button>
+
+          <label><span id="raw_label_text">Raw dir/file</span>
+            <input id="raw_dir" list="raw_list" />
+            <datalist id="raw_list"></datalist>
+            <div id="raw_picker_status" class="upload-status"></div>
           </label>
-        </fieldset>
-        <div></div>
+          <div class="field-actions">
+            <button id="raw_hint" class="ghost" type="button" title="Arrayed: folder with raw exports. Pooled: one pooled table file (CSV/TSV/TXT/XLSX).">?</button>
+            <button id="raw_picker_btn" class="secondary" type="button" title="Arrayed mode: upload one folder containing the raw plate-export CSV/TSV/TXT files. Include the instrument export files themselves, not a zip archive.">Upload Folder</button>
+            <input id="raw_picker" class="hidden" type="file" multiple webkitdirectory directory />
+          </div>
 
-        <label>Data root
-          <input id="data_root" value="{{ defaults.data_root }}" />
-        </label>
-        <button id="scan_btn" class="secondary">Auto-fill Paths</button>
+          <label class="arrayed-only"><span>Layout CSV</span>
+            <input id="layout_csv" list="layout_list" />
+            <datalist id="layout_list"></datalist>
+            <div id="layout_picker_status" class="upload-status"></div>
+          </label>
+          <div class="field-actions arrayed-only">
+            <button id="layout_hint" class="ghost" type="button" title="Plate layout/annotation CSV (arrayed mode).">?</button>
+            <button id="layout_picker_btn" class="secondary" type="button" title="Upload one layout annotation file in CSV or Excel format (.csv, .xlsx, .xls, .xlsm). It must contain Plate_number_384, Well_number_384, Is_NT_ctrl, and Is_pos_ctrl.">Upload File</button>
+            <input id="layout_picker" class="hidden" type="file" accept=".csv,.xlsx,.xls,.xlsm" />
+          </div>
 
-        <label><span id="raw_label_text">Raw dir/file</span>
-          <input id="raw_dir" list="raw_list" />
-          <datalist id="raw_list"></datalist>
-        </label>
-        <button id="raw_hint" class="ghost" type="button" title="Arrayed: folder with raw exports. Pooled: one pooled table file (CSV/TSV/TXT/XLSX).">?</button>
+          <label><span id="genomics_label_text">Genomics XLSX</span>
+            <input id="genomics_excel" list="genomics_list" />
+            <datalist id="genomics_list"></datalist>
+            <div id="genomics_picker_status" class="upload-status"></div>
+          </label>
+          <div class="field-actions">
+            <button id="genomics_hint" class="ghost" type="button" title="Optional in pooled mode. Required in arrayed mode. Used for skyline and sublibrary annotations.">?</button>
+            <button id="genomics_picker_btn" class="secondary" type="button" title="Upload one genomics workbook in Excel format (.xlsx, .xls, .xlsm). It must contain a worksheet with skyline columns such as Gene_symbol, Mean_log2FC, Chromosome, and Start_Position.">Upload File</button>
+            <input id="genomics_picker" class="hidden" type="file" accept=".xlsx,.xls,.xlsm" />
+          </div>
 
-        <label class="arrayed-only"><span>Layout CSV</span>
-          <input id="layout_csv" list="layout_list" />
-          <datalist id="layout_list"></datalist>
-        </label>
-        <button id="layout_hint" class="ghost arrayed-only" type="button" title="Plate layout/annotation CSV (arrayed mode).">?</button>
+          <label>Output dir
+            <input id="output_dir" value="{{ defaults.output_dir }}" />
+          </label>
+          <div></div>
 
-        <label><span id="genomics_label_text">Genomics XLSX</span>
-          <input id="genomics_excel" list="genomics_list" />
-          <datalist id="genomics_list"></datalist>
-        </label>
-        <button id="genomics_hint" class="ghost" type="button" title="Optional in pooled mode. Required in arrayed mode. Used for skyline and sublibrary annotations.">?</button>
+          <div></div>
+          <div></div>
 
-        <label>Output dir
-          <input id="output_dir" value="{{ defaults.output_dir }}" />
-        </label>
-        <div></div>
-
-        <div></div>
-        <div></div>
-
-        <label class="arrayed-only">Skip FRET
-          <input id="skip_fret" type="number" value="{{ defaults.skip_fret }}" />
-        </label>
-        <label class="arrayed-only">Skip GLO
-          <input id="skip_glo" type="number" value="{{ defaults.skip_glo }}" />
-        </label>
-        <label class="arrayed-only">Heatmap plate selector (compatibility)
-          <input id="heatmap_plate" value="{{ defaults.heatmap_plate }}" placeholder="all" />
-        </label>
-      </div>
+          <label class="arrayed-only">Skip FRET
+            <input id="skip_fret" type="number" value="{{ defaults.skip_fret }}" />
+          </label>
+          <label class="arrayed-only">Skip GLO
+            <input id="skip_glo" type="number" value="{{ defaults.skip_glo }}" />
+          </label>
+          <label class="arrayed-only">Heatmap plate selector (compatibility)
+            <input id="heatmap_plate" value="{{ defaults.heatmap_plate }}" placeholder="all" />
+          </label>
+        </div>
+      </section>
 
       <details id="ws-container" class="ws-section arrayed-only">
         <summary>Control Well Selector</summary>
@@ -109,18 +127,29 @@
         </div>
       </details>
 
-      <p id="mode_note" class="mode-note"></p>
-
-      <div class="actions">
-        <button id="run_btn">Run Pipeline</button>
-        <span id="status" class="status idle">Idle</span>
-      </div>
+      <section class="workflow-card">
+        <h2>Execution</h2>
+        <p id="mode_note" class="mode-note"></p>
+        <p class="upload-note">Validate first, then either run the whole pipeline or trigger individual stages below.</p>
+        <div class="actions">
+          <button id="run_btn">Run The Pipeline</button>
+          <button id="validate_btn" class="secondary" type="button">Validate Inputs</button>
+          <span id="status" class="status idle">Idle</span>
+        </div>
+        <div id="validation_status" class="validation-status">Validation has not been run yet.</div>
+        <div class="step-actions">
+          <h3>Run Individual Steps</h3>
+          <div id="step_groups" class="step-groups"></div>
+        </div>
+      </section>
 
       <details class="help">
         <summary>Guidance</summary>
         <ul>
           <li><code>Mode</code>: switch between arrayed and pooled workflows from the same run button.</li>
           <li><code>Auto-fill Paths</code> auto-fills raw/layout/genomics candidates.</li>
+          <li><code>Upload Folder/File</code> sends browser-selected inputs to the server and fills the matching path automatically.</li>
+          <li><code>Validate Inputs</code> checks that the uploaded or typed files match the expected pipeline format before a run starts.</li>
           <li><code>Raw dir/file</code>: arrayed mode expects a folder (or one raw file); pooled mode expects one pooled table file.</li>
           <li><code>Layout CSV</code>: arrayed mode only; should include plate/well/control metadata columns.</li>
           <li><code>Genomics XLSX</code>: required for arrayed mode, optional for pooled mode.</li>
@@ -135,8 +164,10 @@
         </ul>
       </details>
 
-      <h2>Live Log</h2>
-      <pre id="log"></pre>
+      <section class="workflow-card">
+        <h2>Live Log</h2>
+        <pre id="log"></pre>
+      </section>
     </section>
 
     <section class="panel preview-panel">

@@ -6,11 +6,13 @@ let pollTimer = null;
 let figuresUnlocked = false;
 let latestFiguresByName = new Map();
 let currentPreviewFigure = null;
+let currentStepCatalog = [];
 const MODE_ARRAYED = "arrayed";
 const MODE_POOLED = "pooled";
 const SETUP_COOKIE_NAME = "prpcscreen_setup";
 const SETUP_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 180;
 const SETUP_COOKIE_VERSION = 1;
+const DEFAULT_SKYLINE_SHEET = "skylineplot2";
 
 const SETUP_INPUT_IDS = [
   "mode_arrayed",
@@ -52,6 +54,32 @@ const HIDDEN_FIGURE_NAMES = new Set([
   "plate_qc_ssmd_controls.png",
   "plate_well_series_raw_rep1.png",
 ]);
+
+const UPLOAD_FIELDS = {
+  raw_dir: {
+    inputId: "raw_dir",
+    pickerId: "raw_picker",
+    buttonId: "raw_picker_btn",
+    statusId: "raw_picker_status",
+  },
+  layout_csv: {
+    inputId: "layout_csv",
+    pickerId: "layout_picker",
+    buttonId: "layout_picker_btn",
+    statusId: "layout_picker_status",
+  },
+  genomics_excel: {
+    inputId: "genomics_excel",
+    pickerId: "genomics_picker",
+    buttonId: "genomics_picker_btn",
+    statusId: "genomics_picker_status",
+  },
+};
+
+const RAW_UPLOAD_TOOLTIP_ARRAYED =
+  "Arrayed mode: upload one folder containing the raw plate-export CSV/TSV/TXT files. Include the instrument export files themselves, not a zip archive.";
+const RAW_UPLOAD_TOOLTIP_POOLED =
+  "Pooled mode: upload one pooled counts table in CSV, TSV, TXT, XLSX, or XLS format. The table must include replicate columns such as Negative_R1.. and Positive_R1..";
 
 function toTitleCaseWords(text) {
   return text
@@ -119,6 +147,21 @@ function setStatus(text, cls) {
   const s = el("status");
   s.textContent = text;
   s.className = `status ${cls}`;
+}
+
+function setValidationStatus(text, cls = "") {
+  const node = el("validation_status");
+  if (!node) return;
+  node.textContent = text;
+  node.className = `validation-status${cls ? ` ${cls}` : ""}`;
+}
+
+function setUploadStatus(target, text, cls = "") {
+  const statusId = UPLOAD_FIELDS[target]?.statusId;
+  const node = statusId ? el(statusId) : null;
+  if (!node) return;
+  node.textContent = text;
+  node.className = `upload-status${cls ? ` ${cls}` : ""}`;
 }
 
 function appendLog(line) {
@@ -310,8 +353,12 @@ function registerSetupPersistenceHandlers() {
   SETUP_INPUT_IDS.forEach((id) => {
     const node = el(id);
     if (!node) return;
-    node.addEventListener("change", persistSetupCookie);
-    node.addEventListener("blur", persistSetupCookie);
+    const markDirty = () => {
+      persistSetupCookie();
+      setValidationStatus("Validation should be rerun after input changes.");
+    };
+    node.addEventListener("change", markDirty);
+    node.addEventListener("blur", markDirty);
   });
 }
 
@@ -342,6 +389,87 @@ function applyModeUi() {
   document.querySelectorAll(".arrayed-only").forEach((node) => {
     node.classList.toggle("hidden", pooled);
   });
+
+  configurePickerUi();
+}
+
+function configurePickerUi() {
+  const rawPicker = el("raw_picker");
+  const rawButton = el("raw_picker_btn");
+  if (rawPicker && rawButton) {
+    if (selectedMode() === MODE_POOLED) {
+      rawButton.textContent = "Upload File";
+      rawButton.title = RAW_UPLOAD_TOOLTIP_POOLED;
+      rawPicker.removeAttribute("webkitdirectory");
+      rawPicker.removeAttribute("directory");
+      rawPicker.multiple = false;
+      rawPicker.accept = ".csv,.tsv,.txt,.xlsx,.xls";
+    } else {
+      rawButton.textContent = "Upload Folder";
+      rawButton.title = RAW_UPLOAD_TOOLTIP_ARRAYED;
+      rawPicker.setAttribute("webkitdirectory", "");
+      rawPicker.setAttribute("directory", "");
+      rawPicker.multiple = true;
+      rawPicker.accept = ".csv,.tsv,.txt";
+    }
+    rawPicker.value = "";
+  }
+}
+
+async function loadStepCatalog() {
+  const mode = selectedMode();
+  const container = el("step_groups");
+  if (!container) return;
+  container.innerHTML = "";
+  try {
+    const resp = await fetch(`/api/steps?mode=${encodeURIComponent(mode)}`);
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.detail || "Unable to load step list.");
+    }
+    currentStepCatalog = Array.isArray(data.steps) ? data.steps : [];
+    const groups = [];
+    const preprocessing = currentStepCatalog.filter((step) => String(step.kind || "") === "preprocess");
+    const figures = currentStepCatalog.filter((step) => String(step.kind || "") === "figure");
+    const pipeline = currentStepCatalog.filter((step) => String(step.kind || "") === "pipeline");
+    const other = currentStepCatalog.filter((step) => !["preprocess", "figure", "pipeline"].includes(String(step.kind || "")));
+
+    if (preprocessing.length > 0) groups.push({ title: "Preprocessing", steps: preprocessing });
+    if (figures.length > 0) groups.push({ title: "Figures", steps: figures });
+    if (pipeline.length > 0) groups.push({ title: "Pipeline", steps: pipeline });
+    if (other.length > 0) groups.push({ title: "Other", steps: other });
+
+    groups.forEach((group) => {
+      const section = document.createElement("section");
+      section.className = "step-group";
+
+      const heading = document.createElement("h4");
+      heading.textContent = group.title;
+      section.appendChild(heading);
+
+      const buttonGrid = document.createElement("div");
+      buttonGrid.className = "step-buttons";
+      group.steps.forEach((step) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "secondary";
+        button.textContent = step.label || step.key || "Unnamed step";
+        button.title = `Run only this step: ${step.label || step.key}`;
+        button.addEventListener("click", () => {
+          runPipeline([String(step.key)]);
+        });
+        buttonGrid.appendChild(button);
+      });
+      section.appendChild(buttonGrid);
+      container.appendChild(section);
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Unable to load step list.";
+    const fallback = document.createElement("div");
+    fallback.className = "validation-status error";
+    fallback.textContent = detail;
+    container.appendChild(fallback);
+  }
 }
 
 function readForm() {
@@ -354,6 +482,7 @@ function readForm() {
     skip_fret: Number(el("skip_fret").value),
     skip_glo: Number(el("skip_glo").value),
     heatmap_plate: el("heatmap_plate").value.trim(),
+    sheet: DEFAULT_SKYLINE_SHEET,
     debug: true,
   };
   if (typeof wellSelector !== "undefined") {
@@ -361,6 +490,86 @@ function readForm() {
     if (ctrls) payload.control_overrides = ctrls;
   }
   return payload;
+}
+
+async function uploadInput(target) {
+  const config = UPLOAD_FIELDS[target];
+  if (!config) return;
+  const picker = el(config.pickerId);
+  const pathInput = el(config.inputId);
+  if (!picker || !pathInput) return;
+
+  const files = Array.from(picker.files || []);
+  if (files.length === 0) return;
+
+  const formData = new FormData();
+  formData.append("target", target);
+  formData.append("mode", selectedMode());
+  formData.append("sheet", DEFAULT_SKYLINE_SHEET);
+  files.forEach((file) => {
+    formData.append("files", file, file.name);
+    if (target === "raw_dir" && selectedMode() === MODE_ARRAYED) {
+      formData.append("relative_paths", file.webkitRelativePath || file.name);
+    }
+  });
+
+  setUploadStatus(target, `Uploading ${files.length} item(s)...`, "uploading");
+  try {
+    const resp = await fetch("/api/upload-input", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.detail || "Upload failed.");
+    }
+    pathInput.value = String(data.path || "");
+    const message = data.validation?.message || `Upload complete for ${target}.`;
+    setUploadStatus(target, message, "success");
+    appendLog(`[upload] ${target}: ${message}`);
+    if (data.path) {
+      appendLog(`[upload] server path: ${data.path}`);
+    }
+    persistSetupCookie();
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Upload failed.";
+    setUploadStatus(target, detail, "error");
+    appendLog(`[upload] ${target} failed: ${detail}`);
+  } finally {
+    picker.value = "";
+  }
+}
+
+async function validateInputs({forRun = false} = {}) {
+  const payload = readForm();
+  setValidationStatus("Validating inputs...", "running");
+  try {
+    const resp = await fetch("/api/validate-inputs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.detail || "Validation failed.");
+    }
+    const checks = data.checks || {};
+    const messages = [];
+    if (checks.raw_dir?.message) messages.push(`Raw input: ${checks.raw_dir.message}`);
+    if (checks.layout_csv?.message) messages.push(`Layout: ${checks.layout_csv.message}`);
+    if (checks.genomics_excel?.message) messages.push(`Genomics: ${checks.genomics_excel.message}`);
+    messages.forEach((line) => appendLog(`[validate] ${line}`));
+    setValidationStatus("Inputs validated successfully.", "success");
+    if (!forRun) {
+      appendLog("[validate] All required inputs look compatible.");
+    }
+    return true;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Validation failed.";
+    setValidationStatus(detail, "error");
+    appendLog(`[validate] ${detail}`);
+    return false;
+  }
 }
 
 async function scanRoot() {
@@ -475,16 +684,27 @@ async function fetchStatus() {
   }
 }
 
-async function runPipeline() {
+async function runPipeline(stepKeys = null) {
   clearLog();
   setStatus("Starting", "running");
   figuresUnlocked = false;
   updateFigureRefreshState();
   clearFigureList();
   const payload = readForm();
+  if (Array.isArray(stepKeys) && stepKeys.length > 0) {
+    payload.step_keys = stepKeys;
+  }
   persistSetupCookie();
+  const valid = await validateInputs({ forRun: true });
+  if (!valid) {
+    setStatus("Validation Failed", "failed");
+    return;
+  }
+  const executionLabel = Array.isArray(stepKeys) && stepKeys.length > 0
+    ? `steps=${stepKeys.join(",")}`
+    : "full_pipeline";
   appendLog(
-    `Run request: mode=${payload.mode} | raw=${payload.raw_dir} | layout=${payload.layout_csv || "(none)"} | genomics=${payload.genomics_excel || "(none)"} | output=${payload.output_dir} | debug=${payload.debug}`
+    `Run request: mode=${payload.mode} | execution=${executionLabel} | raw=${payload.raw_dir} | layout=${payload.layout_csv || "(none)"} | genomics=${payload.genomics_excel || "(none)"} | output=${payload.output_dir} | debug=${payload.debug}`
   );
   const resp = await fetch("/api/run", {
     method: "POST",
@@ -586,6 +806,9 @@ async function unlockExistingFiguresIfPresent() {
 
 el("scan_btn").addEventListener("click", scanRoot);
 el("run_btn").addEventListener("click", runPipeline);
+el("validate_btn").addEventListener("click", () => {
+  validateInputs();
+});
 el("refresh_figs").addEventListener("click", () => {
   if (!figuresUnlocked) {
     appendLog("Figures will be shown after a successful pipeline run.");
@@ -593,13 +816,28 @@ el("refresh_figs").addEventListener("click", () => {
   }
   refreshFigures();
 });
+Object.entries(UPLOAD_FIELDS).forEach(([target, config]) => {
+  const button = el(config.buttonId);
+  const picker = el(config.pickerId);
+  if (button && picker) {
+    button.addEventListener("click", () => picker.click());
+    picker.addEventListener("change", () => {
+      uploadInput(target);
+    });
+  }
+});
 document.querySelectorAll('input[name="mode"]').forEach((node) => {
-  node.addEventListener("change", applyModeUi);
+  node.addEventListener("change", () => {
+    applyModeUi();
+    loadStepCatalog();
+  });
 });
 
 restoreSetupFromCookie();
 setStatus("Idle", "idle");
+setValidationStatus("Validation has not been run yet.");
 applyModeUi();
+loadStepCatalog();
 registerSetupPersistenceHandlers();
 persistSetupCookie();
 clearFigureList();

@@ -7,6 +7,7 @@ import ipaddress
 import os
 import re
 import secrets
+import shutil
 import smtplib
 import subprocess
 import sys
@@ -21,7 +22,7 @@ from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, Form, HTTPException, Query
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -52,6 +53,8 @@ SKYLINE_COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
 RAW_FILE_EXTENSIONS = {".csv", ".tsv", ".txt"}
 EXCEL_FILE_EXTENSIONS = {".xlsx", ".xls"}
 SCAN_FILE_EXTENSIONS = RAW_FILE_EXTENSIONS | EXCEL_FILE_EXTENSIONS
+LAYOUT_FILE_EXTENSIONS = {".csv", ".xlsx", ".xls", ".xlsm"}
+GENOMICS_FILE_EXTENSIONS = {".xlsx", ".xls", ".xlsm"}
 MAX_GENOMICS_WORKBOOK_PROBES = 6
 AUTH_CONTACT_EMAIL = os.getenv("PRPCSCREEN_AUTH_CONTACT_EMAIL", "contact@isab.science").strip() or "contact@isab.science"
 SESSION_SECRET = os.getenv("PRPCSCREEN_SESSION_SECRET", "").strip() or "change-me-prpcscreen-session-secret"
@@ -87,6 +90,7 @@ def _resolve_metadata_db_path() -> Path:
 
 
 METADATA_DB_PATH = _resolve_metadata_db_path()
+UPLOADS_ROOT = REPO_ROOT / "webapp" / "state" / "uploads"
 
 
 def _default_data_root() -> str:
@@ -131,6 +135,267 @@ def _resolve_scan_root(root_text: str) -> Path:
 
 def _resolve_python() -> str:
     return sys.executable
+
+
+def _uploads_root() -> Path:
+    UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)
+    return UPLOADS_ROOT
+
+
+def _sanitize_upload_filename(filename: str) -> str:
+    name = Path(filename or "").name.strip()
+    if not name:
+        return "upload.bin"
+    clean = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._")
+    return clean or "upload.bin"
+
+
+def _safe_upload_relative_path(relative_path: str, fallback_name: str) -> Path:
+    raw = (relative_path or "").replace("\\", "/").strip("/")
+    if not raw:
+        return Path(_sanitize_upload_filename(fallback_name))
+    candidate = Path(raw)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise HTTPException(status_code=400, detail=f"Unsafe upload path: {relative_path}")
+    parts = [_sanitize_upload_filename(part) for part in candidate.parts if part not in {"", "."}]
+    if not parts:
+        parts = [_sanitize_upload_filename(fallback_name)]
+    return Path(*parts)
+
+
+def _save_upload_stream(upload: UploadFile, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    upload.file.seek(0)
+    with destination.open("wb") as handle:
+        shutil.copyfileobj(upload.file, handle)
+
+
+def _find_workbook_skyline_sheets(path_text: str) -> list[str]:
+    path = Path(path_text)
+    if not path.exists() or path.suffix.lower() not in GENOMICS_FILE_EXTENSIONS:
+        return []
+    try:
+        import pandas as pd
+    except Exception:
+        return []
+    try:
+        workbook = pd.ExcelFile(path)
+    except Exception:
+        return []
+    matches: list[str] = []
+    try:
+        for sheet_name in workbook.sheet_names:
+            try:
+                header = pd.read_excel(workbook, sheet_name=sheet_name, nrows=0)
+            except Exception:
+                continue
+            if _has_required_skyline_columns(list(header.columns)):
+                matches.append(str(sheet_name))
+    finally:
+        try:
+            workbook.close()
+        except Exception:
+            pass
+    return matches
+
+
+def _is_likely_arrayed_measurement_file(path: Path) -> bool:
+    if path.suffix.lower() not in RAW_FILE_EXTENSIONS:
+        return False
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            lines = [handle.readline().strip() for _ in range(80)]
+    except Exception:
+        return False
+    header_seen = any(
+        re.match(r"^,0?1,0?2,0?3,0?4,0?5,0?6,0?7,0?8,0?9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,?$", line)
+        for line in lines
+    )
+    if header_seen:
+        return True
+    plate_row_count = sum(1 for line in lines if re.match(r"^[A-P],", line))
+    return plate_row_count >= 8
+
+
+def _validate_arrayed_raw_input(raw_path: Path) -> dict[str, Any]:
+    if not raw_path.exists():
+        raise HTTPException(status_code=400, detail=f"Raw dir/file not found: {raw_path}")
+    raw_root = raw_path if raw_path.is_dir() else raw_path.parent
+    if raw_path.is_file() and raw_path.suffix.lower() not in RAW_FILE_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Arrayed raw input must be a CSV/TSV/TXT plate export or a directory containing such files.",
+        )
+    candidates = [
+        p
+        for ext in ("*.csv", "*.tsv", "*.txt")
+        for p in raw_root.rglob(ext)
+    ]
+    candidates = sorted(set(candidates))
+    plausible = [p for p in candidates if _is_likely_arrayed_measurement_file(p)]
+    if not plausible:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Arrayed raw input does not contain recognizable plate export files. "
+                "Upload a folder with CSV/TSV/TXT instrument exports."
+            ),
+        )
+    return {
+        "path": str(raw_path),
+        "mode": "arrayed",
+        "kind": "directory" if raw_path.is_dir() else "file",
+        "measurement_files": len(plausible),
+        "sample_files": [p.name for p in plausible[:5]],
+        "message": f"Validated {len(plausible)} arrayed measurement file(s).",
+    }
+
+
+def _validate_pooled_raw_input(raw_path: Path) -> dict[str, Any]:
+    if not raw_path.exists():
+        raise HTTPException(status_code=400, detail=f"Pooled input file not found: {raw_path}")
+    if not raw_path.is_file():
+        raise HTTPException(status_code=400, detail="Pooled mode requires one uploaded table file, not a directory.")
+    if raw_path.suffix.lower() not in SCAN_FILE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Pooled input must be CSV, TSV, TXT, XLSX, or XLS.")
+    try:
+        from prpcscreen.analysis.pooled_processing import load_pooled_table, resolve_replicate_columns
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Unable to load pooled validation helpers: {exc}") from exc
+    try:
+        pooled_df, used_sheet = load_pooled_table(raw_path)
+        reference_cols, treatment_cols = resolve_replicate_columns(pooled_df)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Pooled table format is not compatible with the pipeline: "
+                f"{exc}. Expected replicate columns like Negative_R1.. and Positive_R1.."
+            ),
+        ) from exc
+    return {
+        "path": str(raw_path),
+        "mode": "pooled",
+        "kind": "file",
+        "rows": int(len(pooled_df)),
+        "columns": int(len(pooled_df.columns)),
+        "sheet": used_sheet,
+        "reference_columns": reference_cols,
+        "treatment_columns": treatment_cols,
+        "message": (
+            f"Validated pooled table with {len(reference_cols)} reference and "
+            f"{len(treatment_cols)} treatment replicate column(s)."
+        ),
+    }
+
+
+def _validate_layout_input(layout_path: Path) -> dict[str, Any]:
+    if not layout_path.exists():
+        raise HTTPException(status_code=400, detail=f"Layout CSV not found: {layout_path}")
+    if layout_path.suffix.lower() not in LAYOUT_FILE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Layout input must be CSV or Excel (.xlsx/.xls/.xlsm).")
+    if not _path_has_layout_columns(str(layout_path)):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Layout file does not look like the flattened annotation table required for arrayed runs. "
+                "It must include Plate_number_384, Well_number_384, Is_NT_ctrl, and Is_pos_ctrl."
+            ),
+        )
+    return {
+        "path": str(layout_path),
+        "columns_required": list(REQUIRED_LAYOUT_COLUMNS),
+        "message": "Validated layout annotation columns.",
+    }
+
+
+def _validate_genomics_input(genomics_path: Path, sheet: str) -> dict[str, Any]:
+    if not genomics_path.exists():
+        raise HTTPException(status_code=400, detail=f"Genomics Excel not found: {genomics_path}")
+    if genomics_path.suffix.lower() not in GENOMICS_FILE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Genomics input must be an Excel workbook (.xlsx/.xls/.xlsm).")
+    if _looks_like_layout_workbook(str(genomics_path)):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Genomics Excel appears to be a layout workbook. "
+                "Select a workbook with skyline columns like Gene_symbol, Mean_log2FC, Chromosome, and Start_Position."
+            ),
+        )
+    matches = _find_workbook_skyline_sheets(str(genomics_path))
+    if not matches:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Genomics workbook is not skyline-compatible. "
+                "No worksheet with Gene_symbol, Mean_log2FC, Chromosome, and Start_Position was found."
+            ),
+        )
+    validate_cmd = [
+        _resolve_python(),
+        "prpcscreen/scripts/plot_genomic_signal_skyline.py",
+        str(genomics_path),
+        "--sheet",
+        (sheet or DEFAULT_SHEET).strip() or DEFAULT_SHEET,
+        "--validate-only",
+    ]
+    preflight = subprocess.run(
+        validate_cmd,
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if preflight.returncode != 0:
+        detail_lines = [line.strip() for line in (preflight.stdout + "\n" + preflight.stderr).splitlines() if line.strip()]
+        detail = " | ".join(detail_lines[:4]) if detail_lines else "Unknown skyline validation error."
+        raise HTTPException(status_code=400, detail=f"Genomics workbook failed skyline validation: {detail}")
+    return {
+        "path": str(genomics_path),
+        "skyline_sheets": matches,
+        "validated_sheet": (sheet or DEFAULT_SHEET).strip() or DEFAULT_SHEET,
+        "message": "Validated genomics workbook for skyline plotting.",
+    }
+
+
+def _validate_mode_inputs(
+    *,
+    mode: str,
+    raw_dir: str,
+    layout_csv: str = "",
+    genomics_excel: str = "",
+    heatmap_plate: str = DEFAULT_HEATMAP_PLATE,
+    sheet: str = DEFAULT_SHEET,
+) -> dict[str, Any]:
+    normalized_mode = _normalize_mode(mode)
+    if not normalized_mode:
+        raise HTTPException(status_code=400, detail=f"Invalid mode '{mode}'. Use one of: {', '.join(sorted(VALID_MODES))}.")
+    if not str(raw_dir or "").strip():
+        raise HTTPException(status_code=400, detail="Missing required field: raw_dir")
+
+    raw_path = Path(str(raw_dir).strip()).expanduser()
+    checks: dict[str, Any] = {
+        "mode": normalized_mode,
+        "raw_dir": _validate_arrayed_raw_input(raw_path) if normalized_mode == "arrayed" else _validate_pooled_raw_input(raw_path),
+    }
+
+    genomics_text = str(genomics_excel or "").strip()
+    if normalized_mode == "arrayed":
+        if not str(layout_csv or "").strip():
+            raise HTTPException(status_code=400, detail="Missing required field: layout_csv")
+        if not genomics_text:
+            raise HTTPException(status_code=400, detail="Missing required field: genomics_excel")
+        if not _is_valid_heatmap_selector(heatmap_plate):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid heatmap_plate selector. Use one number (1), a range (1-4), a series (1,2,6), or 'all'.",
+            )
+        checks["layout_csv"] = _validate_layout_input(Path(str(layout_csv).strip()).expanduser())
+        checks["genomics_excel"] = _validate_genomics_input(Path(genomics_text).expanduser(), sheet=sheet)
+    elif genomics_text:
+        checks["genomics_excel"] = _validate_genomics_input(Path(genomics_text).expanduser(), sheet=sheet)
+    return checks
 
 
 def _is_valid_heatmap_selector(value: str) -> bool:
@@ -259,10 +524,20 @@ class RunRequest(BaseModel):
     heatmap_plate: str = DEFAULT_HEATMAP_PLATE
     debug: bool = False
     control_overrides: dict[str, str] | None = None
+    step_keys: list[str] | None = None
 
 
 class ScanRequest(BaseModel):
     root: str
+
+
+class InputValidationRequest(BaseModel):
+    mode: str = DEFAULT_MODE
+    raw_dir: str
+    layout_csv: str = ""
+    genomics_excel: str = ""
+    heatmap_plate: str = DEFAULT_HEATMAP_PLATE
+    sheet: str = DEFAULT_SHEET
 
 
 class SignupRequest(BaseModel):
@@ -840,7 +1115,7 @@ def _scan_root(root_text: str) -> dict[str, Any]:
     }
 
 
-def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str, str]]:
+def _build_steps(req: RunRequest) -> tuple[list[dict[str, Any]], dict[str, str]]:
     output_dir = Path(req.output_dir)
     output_abs = output_dir if output_dir.is_absolute() else (REPO_ROOT / output_dir)
     fig_dir = output_abs / "figures"
@@ -867,15 +1142,23 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
                 pooled_cmd.extend(["--skyline-sheet", str(req.sheet).strip()])
         if req.debug:
             pooled_cmd.append("--debug")
-        steps = [("Run pooled pipeline", pooled_cmd)]
+        steps = [
+            {
+                "key": "run_pooled_pipeline",
+                "label": "Run pooled pipeline",
+                "cmd": pooled_cmd,
+                "kind": "pipeline",
+            }
+        ]
     else:
         raw_dir = Path(req.raw_dir)
         raw_for_integration = raw_dir if raw_dir.is_dir() else raw_dir.parent
 
         steps = [
-            (
-                "Integrate raw data",
-                [
+            {
+                "key": "integrate_raw_data",
+                "label": "Integrate raw data",
+                "cmd": [
                     _resolve_python(),
                     "prpcscreen/scripts/merge_assay_exports.py",
                     str(raw_for_integration),
@@ -886,10 +1169,12 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
                     "--skip-glo",
                     str(req.skip_glo),
                 ],
-            ),
-            (
-                "Analyze integrated data",
-                [
+                "kind": "preprocess",
+            },
+            {
+                "key": "analyze_integrated_data",
+                "label": "Analyze integrated data",
+                "cmd": [
                     _resolve_python(),
                     "prpcscreen/scripts/compute_screen_metrics.py",
                     str(integrated),
@@ -897,14 +1182,18 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
                     "--hits_csv",
                     str(hits),
                 ],
-            ),
-            (
-                "Plate quality controls",
-                [_resolve_python(), "prpcscreen/scripts/plot_plate_health.py", str(analyzed), str(fig_dir / "plate_qc_ssmd_controls.png"), "--interactive-only"],
-            ),
-            (
-                "Plate well trajectory plot",
-                [
+                "kind": "preprocess",
+            },
+            {
+                "key": "plate_quality_controls",
+                "label": "Plate quality controls",
+                "cmd": [_resolve_python(), "prpcscreen/scripts/plot_plate_health.py", str(analyzed), str(fig_dir / "plate_qc_ssmd_controls.png"), "--interactive-only"],
+                "kind": "figure",
+            },
+            {
+                "key": "plate_well_trajectory_plot",
+                "label": "Plate well trajectory plot",
+                "cmd": [
                     _resolve_python(),
                     "prpcscreen/scripts/plot_well_trajectories.py",
                     str(analyzed),
@@ -913,10 +1202,12 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
                     "Raw_rep1",
                     "--interactive-only",
                 ],
-            ),
-            (
-                "Replicate agreement diagnostics",
-                [
+                "kind": "figure",
+            },
+            {
+                "key": "replicate_agreement_diagnostics",
+                "label": "Replicate agreement diagnostics",
+                "cmd": [
                     _resolve_python(),
                     "prpcscreen/scripts/plot_replicate_agreement.py",
                     str(analyzed),
@@ -924,10 +1215,12 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
                     "--stem",
                     "Log2FC",
                 ],
-            ),
-            (
-                "Signal distribution histogram",
-                [
+                "kind": "figure",
+            },
+            {
+                "key": "signal_distribution_histogram",
+                "label": "Signal distribution histogram",
+                "cmd": [
                     _resolve_python(),
                     "prpcscreen/scripts/plot_signal_distributions.py",
                     str(analyzed),
@@ -938,10 +1231,12 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
                     "--genomics_excel",
                     str(req.genomics_excel),
                 ],
-            ),
-            (
-                "Candidate landscape plots",
-                [
+                "kind": "figure",
+            },
+            {
+                "key": "candidate_landscape_plots",
+                "label": "Candidate landscape plots",
+                "cmd": [
                     _resolve_python(),
                     "prpcscreen/scripts/plot_candidate_landscape.py",
                     str(analyzed),
@@ -951,10 +1246,12 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
                     "--genomics_excel",
                     str(req.genomics_excel),
                 ],
-            ),
-            (
-                "Heatmap + violin/box plot",
-                [
+                "kind": "figure",
+            },
+            {
+                "key": "heatmap_violin_box_plot",
+                "label": "Heatmap + violin/box plot",
+                "cmd": [
                     _resolve_python(),
                     "prpcscreen/scripts/plot_spatial_and_group_views.py",
                     str(analyzed),
@@ -963,10 +1260,12 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
                     "--plate",
                     str(req.heatmap_plate),
                 ],
-            ),
-            (
-                "Genomic signal skyline plot",
-                [
+                "kind": "figure",
+            },
+            {
+                "key": "genomic_signal_skyline_plot",
+                "label": "Genomic signal skyline plot",
+                "cmd": [
                     _resolve_python(),
                     "prpcscreen/scripts/plot_genomic_signal_skyline.py",
                     str(req.genomics_excel),
@@ -975,10 +1274,12 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
                     req.sheet,
                     "--interactive-only",
                 ],
-            ),
+                "kind": "figure",
+            },
         ]
         if req.debug:
-            steps = [(name, cmd + ["--debug"]) for name, cmd in steps]
+            for step in steps:
+                step["cmd"] = list(step["cmd"]) + ["--debug"]
 
     outputs = {
         "integrated": str(integrated),
@@ -988,6 +1289,31 @@ def _build_steps(req: RunRequest) -> tuple[list[tuple[str, list[str]]], dict[str
         "output_dir": str(output_abs),
     }
     return steps, outputs
+
+
+def _available_steps(mode: str) -> list[dict[str, str]]:
+    normalized_mode = _normalize_mode(mode) or DEFAULT_MODE
+    sample = RunRequest(
+        mode=normalized_mode,
+        raw_dir="placeholder",
+        layout_csv="placeholder.csv",
+        genomics_excel="placeholder.xlsx",
+        output_dir=DEFAULT_OUTPUT_DIR,
+        sheet=DEFAULT_SHEET,
+        skip_fret=DEFAULT_SKIP_FRET,
+        skip_glo=DEFAULT_SKIP_GLO,
+        heatmap_plate=DEFAULT_HEATMAP_PLATE,
+        debug=False,
+    )
+    steps, _ = _build_steps(sample)
+    return [
+        {
+            "key": str(step["key"]),
+            "label": str(step["label"]),
+            "kind": str(step.get("kind") or ""),
+        }
+        for step in steps
+    ]
 
 
 def _apply_control_overrides(layout_csv: str, overrides: dict[str, str], output_dir: Path) -> str:
@@ -1089,8 +1415,20 @@ def _run_pipeline(run_id: str, req: RunRequest) -> None:
                 n_overrides = len(req.control_overrides)
                 state.add(f"Applied {n_overrides} control well override(s) from well-selector → {req.layout_csv}")
         steps, outputs = _build_steps(req)
+        selected_keys = [str(key).strip() for key in (req.step_keys or []) if str(key).strip()]
+        if selected_keys:
+            key_set = set(selected_keys)
+            steps = [step for step in steps if str(step["key"]) in key_set]
+            if not steps:
+                raise RuntimeError("No matching pipeline steps were selected.")
+            state.add("Selected execution: " + ", ".join(str(step["label"]) for step in steps))
+        else:
+            state.add("Selected execution: full pipeline")
+
         total = len(steps)
-        for idx, (name, cmd) in enumerate(steps, start=1):
+        for idx, step in enumerate(steps, start=1):
+            name = str(step["label"])
+            cmd = list(step["cmd"])
             state.add(f"Progress [{idx}/{total}] Starting: {name}")
             state.add("  " + " ".join(f'"{c}"' if " " in c else c for c in cmd))
             proc = subprocess.Popen(
@@ -1609,108 +1947,118 @@ def api_layout_controls(body: LayoutControlsRequest, request: Request) -> dict[s
     return {"assignments": assignments}
 
 
+@app.post("/api/upload-input")
+async def api_upload_input(
+    request: Request,
+    target: str = Form(...),
+    mode: str = Form(DEFAULT_MODE),
+    sheet: str = Form(DEFAULT_SHEET),
+    files: list[UploadFile] = File(...),
+    relative_paths: list[str] = Form(default=[]),
+) -> dict[str, Any]:
+    user = _require_user(request)
+    target_name = str(target or "").strip().lower()
+    normalized_mode = _normalize_mode(mode)
+    if not normalized_mode:
+        raise HTTPException(status_code=400, detail=f"Invalid mode '{mode}'.")
+    if target_name not in {"raw_dir", "layout_csv", "genomics_excel"}:
+        raise HTTPException(status_code=400, detail=f"Unsupported upload target: {target}")
+    if not files:
+        raise HTTPException(status_code=400, detail="No files were uploaded.")
+
+    actor = str(user.get("username") or "user").strip() or "user"
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    upload_base = _uploads_root() / f"{stamp}_{actor}_{uuid.uuid4().hex[:8]}"
+
+    if target_name == "raw_dir" and normalized_mode == "arrayed":
+        saved_root = upload_base / "raw_dir"
+        rels = relative_paths if len(relative_paths) == len(files) else []
+        for idx, upload in enumerate(files):
+            rel = rels[idx] if idx < len(rels) else upload.filename
+            destination = saved_root / _safe_upload_relative_path(rel, upload.filename or f"file_{idx + 1}")
+            _save_upload_stream(upload, destination)
+        validation = _validate_arrayed_raw_input(saved_root)
+        return {
+            "ok": True,
+            "target": target_name,
+            "path": str(saved_root),
+            "saved_files": int(len(files)),
+            "validation": validation,
+        }
+
+    if len(files) != 1:
+        raise HTTPException(status_code=400, detail="This field accepts exactly one file.")
+
+    upload = files[0]
+    field_dir = upload_base / target_name
+    destination = field_dir / _sanitize_upload_filename(upload.filename or "upload.bin")
+    _save_upload_stream(upload, destination)
+
+    if target_name == "raw_dir":
+        validation = (
+            _validate_arrayed_raw_input(destination)
+            if normalized_mode == "arrayed"
+            else _validate_pooled_raw_input(destination)
+        )
+    elif target_name == "layout_csv":
+        validation = _validate_layout_input(destination)
+    else:
+        validation = _validate_genomics_input(destination, sheet=sheet)
+
+    return {
+        "ok": True,
+        "target": target_name,
+        "path": str(destination),
+        "saved_files": 1,
+        "validation": validation,
+    }
+
+
+@app.post("/api/validate-inputs")
+def api_validate_inputs(body: InputValidationRequest, request: Request) -> dict[str, Any]:
+    _require_user(request)
+    checks = _validate_mode_inputs(
+        mode=body.mode,
+        raw_dir=body.raw_dir,
+        layout_csv=body.layout_csv,
+        genomics_excel=body.genomics_excel,
+        heatmap_plate=body.heatmap_plate,
+        sheet=body.sheet,
+    )
+    return {"ok": True, "checks": checks}
+
+
 @app.post("/api/scan")
 def api_scan(body: ScanRequest, request: Request) -> dict[str, Any]:
     _require_user(request)
     return _scan_root(body.root)
 
 
+@app.get("/api/steps")
+def api_steps(request: Request, mode: str = Query(default=DEFAULT_MODE)) -> dict[str, Any]:
+    _require_user(request)
+    normalized_mode = _normalize_mode(mode) or DEFAULT_MODE
+    return {"mode": normalized_mode, "steps": _available_steps(normalized_mode)}
+
+
 @app.post("/api/run")
 def api_run(body: RunRequest, request: Request) -> dict[str, str]:
     actor_user = _require_user(request)
-    mode = _normalize_mode(body.mode)
-    if not mode:
-        raise HTTPException(status_code=400, detail=f"Invalid mode '{body.mode}'. Use one of: {', '.join(sorted(VALID_MODES))}.")
+    checks = _validate_mode_inputs(
+        mode=body.mode,
+        raw_dir=body.raw_dir,
+        layout_csv=body.layout_csv,
+        genomics_excel=body.genomics_excel,
+        heatmap_plate=body.heatmap_plate,
+        sheet=body.sheet,
+    )
+    mode = str(checks.get("mode") or DEFAULT_MODE)
     body.mode = mode
-
-    if not body.raw_dir:
-        raise HTTPException(status_code=400, detail="Missing required field: raw_dir")
     raw_path = Path(body.raw_dir)
-    if not raw_path.exists():
-        raise HTTPException(status_code=400, detail=f"Raw dir/file not found: {body.raw_dir}")
     if not body.output_dir:
         raise HTTPException(status_code=400, detail="Missing required field: output_dir")
 
     genomics_path = Path(body.genomics_excel) if str(body.genomics_excel).strip() else None
-
-    if mode == "arrayed":
-        for required in ("layout_csv", "genomics_excel", "sheet", "heatmap_plate"):
-            if not getattr(body, required):
-                raise HTTPException(status_code=400, detail=f"Missing required field: {required}")
-        if not Path(body.layout_csv).exists():
-            raise HTTPException(status_code=400, detail=f"Layout CSV not found: {body.layout_csv}")
-        if not _path_has_layout_columns(body.layout_csv):
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Layout file does not look like the flattened annotation table required for arrayed runs. "
-                    "Select a CSV/XLSX with Plate_number_384, Well_number_384, Is_NT_ctrl, and Is_pos_ctrl "
-                    "(for this dataset, use 01_integrated.csv rather than Layout.xlsx)."
-                ),
-            )
-        if genomics_path is None or not genomics_path.exists():
-            raise HTTPException(status_code=400, detail=f"Genomics Excel not found: {body.genomics_excel}")
-        if _looks_like_layout_workbook(str(genomics_path)):
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Genomics Excel appears to be a layout workbook. Select a workbook with skyline columns "
-                    "(Gene_symbol, Mean_log2FC, Chromosome, Start_Position), e.g. GeneticLocation.xlsx."
-                ),
-            )
-        if not _is_valid_heatmap_selector(body.heatmap_plate):
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid heatmap_plate selector. Use one number (1), a range (1-4), a series (1,2,6), or 'all'.",
-            )
-    else:
-        if not raw_path.is_file():
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "For pooled mode, raw_dir must point to a table file "
-                    "(CSV/TSV/TXT/XLSX), not a directory."
-                ),
-            )
-        if genomics_path is not None:
-            if not genomics_path.exists():
-                raise HTTPException(status_code=400, detail=f"Genomics Excel not found: {body.genomics_excel}")
-            if _looks_like_layout_workbook(str(genomics_path)):
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Genomics Excel appears to be a layout workbook. Select a workbook with skyline columns "
-                        "(Gene_symbol, Mean_log2FC, Chromosome, Start_Position), e.g. GeneticLocation.xlsx."
-                    ),
-                )
-
-    if genomics_path is not None:
-        skyline_sheet = body.sheet.strip() or DEFAULT_SHEET
-        validate_cmd = [
-            _resolve_python(),
-            "prpcscreen/scripts/plot_genomic_signal_skyline.py",
-            str(genomics_path),
-            "--sheet",
-            skyline_sheet,
-            "--validate-only",
-        ]
-        if body.debug:
-            validate_cmd.append("--debug")
-        preflight = subprocess.run(
-            validate_cmd,
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        if preflight.returncode != 0:
-            detail_lines = [line.strip() for line in (preflight.stdout + "\n" + preflight.stderr).splitlines() if line.strip()]
-            detail = " | ".join(detail_lines[:4]) if detail_lines else "Unknown skyline validation error."
-            raise HTTPException(
-                status_code=400,
-                detail=f"Genomics Excel is not skyline-compatible: {genomics_path}. {detail}",
-            )
 
     run_id = uuid.uuid4().hex[:12]
     state = RunState(id=run_id)
