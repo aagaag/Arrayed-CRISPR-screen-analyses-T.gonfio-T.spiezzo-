@@ -416,6 +416,23 @@ function configurePickerUi() {
   }
 }
 
+function openScopeModal() {
+  const modal = el("scope_modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+}
+
+function closeScopeModal() {
+  const modal = el("scope_modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  document.body.classList.remove("modal-open");
+}
+
+window.openScopeModal = openScopeModal;
+window.closeScopeModal = closeScopeModal;
+
 async function loadStepCatalog() {
   const mode = selectedMode();
   const container = el("step_groups");
@@ -815,6 +832,27 @@ el("refresh_figs").addEventListener("click", () => {
     return;
   }
   refreshFigures();
+});
+const scopeButton = el("scope_btn");
+if (scopeButton) {
+  scopeButton.addEventListener("click", openScopeModal);
+}
+const scopeCloseButton = el("scope_close_btn");
+if (scopeCloseButton) {
+  scopeCloseButton.addEventListener("click", closeScopeModal);
+}
+const scopeModal = el("scope_modal");
+if (scopeModal) {
+  scopeModal.addEventListener("click", (event) => {
+    if (event.target && event.target.id === "scope_modal") {
+      closeScopeModal();
+    }
+  });
+}
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeScopeModal();
+  }
 });
 Object.entries(UPLOAD_FIELDS).forEach(([target, config]) => {
   const button = el(config.buttonId);

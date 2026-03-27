@@ -6,11 +6,11 @@
   <title>Automated CRISPR Screen Analysis</title>
   <link rel="icon" href="/static/favicon.ico?v=20260221">
   <link rel="apple-touch-icon" href="/static/favicon.ico?v=20260221">
-  <link rel="stylesheet" href="/static/style.css?v=20260223l">
+  <link rel="stylesheet" href="/static/style.css?v=20260327d">
 </head>
 <body>
   <main class="layout">
-    <section class="panel">
+    <section class="panel workflow-panel">
       <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-bottom:8px;">
         <span style="font-size:12px; color:#334155;">Signed in as {{ user.username }}{% if user.email %} ({{ user.email }}){% endif %}</span>
         {% if user.is_admin %}
@@ -26,77 +26,75 @@
       <div class="brand">
         <img src="/static/isab.svg?v=20260221" alt="ISAB logo" class="brand-logo">
         <h1>Automated CRISPR Screen Analysis</h1>
+        <button id="scope_btn" class="secondary scope-btn" type="button" onclick="openScopeModal()">Scope of this tool</button>
       </div>
 
       <section class="workflow-card">
         <h2>Data Inputs</h2>
-        <div class="grid">
-          <fieldset class="mode-control">
+        <div class="grid compact-grid">
+          <fieldset class="mode-control mode-span">
             <legend>Mode</legend>
-            <label class="radio-option" for="mode_arrayed">
-              <input id="mode_arrayed" name="mode" type="radio" value="arrayed" {% if defaults.mode != "pooled" %}checked{% endif %} />
-              <span>Arrayed</span>
-            </label>
-            <label class="radio-option" for="mode_pooled">
-              <input id="mode_pooled" name="mode" type="radio" value="pooled" {% if defaults.mode == "pooled" %}checked{% endif %} />
-              <span>Pooled</span>
-            </label>
+            <div class="mode-options">
+              <label class="radio-option" for="mode_arrayed">
+                <input id="mode_arrayed" name="mode" type="radio" value="arrayed" {% if defaults.mode != "pooled" %}checked{% endif %} />
+                <span>Arrayed</span>
+              </label>
+              <label class="radio-option" for="mode_pooled">
+                <input id="mode_pooled" name="mode" type="radio" value="pooled" {% if defaults.mode == "pooled" %}checked{% endif %} />
+                <span>Pooled</span>
+              </label>
+            </div>
           </fieldset>
-          <div></div>
 
-          <label>Data root
+          <label class="field-wide">Data root
             <input id="data_root" value="{{ defaults.data_root }}" />
           </label>
-          <button id="scan_btn" class="secondary">Auto-fill Paths</button>
+          <button id="scan_btn" class="secondary action-button compact-action">Auto-fill Paths</button>
 
-          <label><span id="raw_label_text">Raw dir/file</span>
+          <label class="field-wide"><span id="raw_label_text">Raw dir/file</span>
             <input id="raw_dir" list="raw_list" />
             <datalist id="raw_list"></datalist>
             <div id="raw_picker_status" class="upload-status"></div>
           </label>
-          <div class="field-actions">
+          <div class="field-actions action-stack">
             <button id="raw_hint" class="ghost" type="button" title="Arrayed: folder with raw exports. Pooled: one pooled table file (CSV/TSV/TXT/XLSX).">?</button>
             <button id="raw_picker_btn" class="secondary" type="button" title="Arrayed mode: upload one folder containing the raw plate-export CSV/TSV/TXT files. Include the instrument export files themselves, not a zip archive.">Upload Folder</button>
             <input id="raw_picker" class="hidden" type="file" multiple webkitdirectory directory />
           </div>
 
-          <label class="arrayed-only"><span>Layout CSV</span>
+          <label class="arrayed-only field-wide"><span>Layout CSV</span>
             <input id="layout_csv" list="layout_list" />
             <datalist id="layout_list"></datalist>
             <div id="layout_picker_status" class="upload-status"></div>
           </label>
-          <div class="field-actions arrayed-only">
+          <div class="field-actions action-stack arrayed-only">
             <button id="layout_hint" class="ghost" type="button" title="Plate layout/annotation CSV (arrayed mode).">?</button>
             <button id="layout_picker_btn" class="secondary" type="button" title="Upload one layout annotation file in CSV or Excel format (.csv, .xlsx, .xls, .xlsm). It must contain Plate_number_384, Well_number_384, Is_NT_ctrl, and Is_pos_ctrl.">Upload File</button>
             <input id="layout_picker" class="hidden" type="file" accept=".csv,.xlsx,.xls,.xlsm" />
           </div>
 
-          <label><span id="genomics_label_text">Genomics XLSX</span>
+          <label class="field-wide"><span id="genomics_label_text">Genomics XLSX</span>
             <input id="genomics_excel" list="genomics_list" />
             <datalist id="genomics_list"></datalist>
             <div id="genomics_picker_status" class="upload-status"></div>
           </label>
-          <div class="field-actions">
+          <div class="field-actions action-stack">
             <button id="genomics_hint" class="ghost" type="button" title="Optional in pooled mode. Required in arrayed mode. Used for skyline and sublibrary annotations.">?</button>
             <button id="genomics_picker_btn" class="secondary" type="button" title="Upload one genomics workbook in Excel format (.xlsx, .xls, .xlsm). It must contain a worksheet with skyline columns such as Gene_symbol, Mean_log2FC, Chromosome, and Start_Position.">Upload File</button>
             <input id="genomics_picker" class="hidden" type="file" accept=".xlsx,.xls,.xlsm" />
           </div>
 
-          <label>Output dir
+          <label class="field-half">Output dir
             <input id="output_dir" value="{{ defaults.output_dir }}" />
           </label>
-          <div></div>
 
-          <div></div>
-          <div></div>
-
-          <label class="arrayed-only">Skip FRET
+          <label class="arrayed-only field-quarter">Skip FRET
             <input id="skip_fret" type="number" value="{{ defaults.skip_fret }}" />
           </label>
-          <label class="arrayed-only">Skip GLO
+          <label class="arrayed-only field-quarter">Skip GLO
             <input id="skip_glo" type="number" value="{{ defaults.skip_glo }}" />
           </label>
-          <label class="arrayed-only">Heatmap plate selector (compatibility)
+          <label class="arrayed-only field-full">Heatmap plate selector (compatibility)
             <input id="heatmap_plate" value="{{ defaults.heatmap_plate }}" placeholder="all" />
           </label>
         </div>
@@ -187,7 +185,43 @@
       <iframe id="preview_frame" title="Interactive figure preview"></iframe>
     </section>
   </main>
-  <script src="/static/well_selector.js?v=20260326"></script>
-  <script src="/static/app.js?v=20260326"></script>
+
+  <div id="scope_modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="scope_modal_title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="scope_modal_title">Scope of this tool</h2>
+        <button id="scope_close_btn" class="secondary" type="button" onclick="closeScopeModal()">Close</button>
+      </div>
+      <div class="modal-body">
+        <p>
+          The use of transactivators for CRISPR screens is extremely powerful. However, one potential issue arises from
+          the fact that the human genome, viewed with an engineer’s eye, is not particularly well organized. CRISPR
+          activation works by recruiting transactivators to well-defined genomic sites in order to activate the
+          corresponding gene. Yet VPR is a very strong transactivator and may influence the transcription of neighboring
+          genes as well, sometimes even in a bidirectional manner.
+        </p>
+        <p>
+          How can you identify such potential artifacts before they lead you into a rabbit’s hole? A good way is to map
+          the primary hits emerging from your screens to their chromosomal locations. If several hits cluster at exactly
+          the same chromosomal position, this is a strong indication that the apparent hit may in fact be a red herring,
+          whereas the true hit could be a different gene located in the immediate neighborhood.
+        </p>
+        <p>
+          The resulting plot, which will be henceforth called the Appenzeller Plot, vaguely resembles a Manhattan Plot,
+          but differs in several important ways: it reports both positive and negative effects, and the p-value, which
+          provides a measure of confidence, is encoded using a color bar. The colors are fully customizable to
+          accommodate colorblind readers, including myself.
+        </p>
+        <p>
+          For demonstration purposes, the tool is pre-loaded with the results of Elena De Cecco’s screen for prion
+          uptake modifiers (2025.11.08.687161v1.full.pdf) but you can upload your own data, including very small
+          collections of genes which you can directly enter into the respective form.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/well_selector.js?v=20260327d"></script>
+  <script src="/static/app.js?v=20260327d"></script>
 </body>
 </html>
