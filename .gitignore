@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 .DS_Store
 webapp/state/
+tmp/
 results/figures/*
 !results/figures/candidate_volcano_interactive.html
 !results/figures/candidate_volcano_interactive.html.gz
