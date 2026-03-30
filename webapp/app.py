@@ -2188,15 +2188,6 @@ def api_file(path: str, request: Request) -> FileResponse:
     p = _safe_path(path)
     if not p.exists() or not p.is_file():
         raise HTTPException(status_code=404, detail=f"File not found: {path}")
-    if p.suffix.lower() in {".html", ".htm"}:
-        enc = request.headers.get("accept-encoding", "").lower()
-        gz = p.with_suffix(p.suffix + ".gz")
-        if "gzip" in enc and gz.exists() and gz.is_file():
-            return FileResponse(
-                str(gz),
-                media_type="text/html; charset=utf-8",
-                headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
-            )
     return FileResponse(str(p))
 
 
