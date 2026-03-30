@@ -20,3 +20,8 @@ ScreenResults/
 PrPScreen_raw_data/
 PrP_genes_and_NT_ordered_AguzziLab.xlsx
 Layout.xlsx
+
+# Generated analysis tables kept locally
+results/01_integrated.csv
+results/02_analyzed.csv
+results/03_hits.csv
