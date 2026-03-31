@@ -75,6 +75,9 @@ Recommended deploy setting:
 export CRISPR_SHARED_DATA_ROOT=/home/aag/crispr_data/shared
 ```
 
+For the shared campaign data root, prefer `/srv/crispr/ScreenResults` on Linux. `/usr`
+is not a good fit because it is meant for installed software, not mutable analysis data.
+
 ## Pooled Screen Mode (Reuses Figure Stack)
 
 Use this mode when your input is guide-level pooled counts (for example `Negative_R*` vs `Positive_R*` replicate columns) and you want to reuse the existing replicate/distribution/volcano figure logic without forking plotting code.

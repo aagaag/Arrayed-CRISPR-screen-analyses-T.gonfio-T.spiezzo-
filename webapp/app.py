@@ -97,14 +97,16 @@ CRISPR_SHARED_DATA_ROOT = Path(
 SHARED_GENOMICS_WORKBOOKS = (
     CRISPR_SHARED_DATA_ROOT / "annotations" / "PrP_genes_and_NT_ordered_AguzziLab.xlsx",
 )
+DEFAULT_SYSTEM_DATA_ROOT = Path(
+    os.getenv("PRPCSCREEN_SYSTEM_DATA_ROOT", "/srv/crispr/ScreenResults").strip() or "/srv/crispr/ScreenResults"
+).expanduser()
 
 
 def _default_data_root() -> str:
     env_override = os.getenv("PRPCSCREEN_DATA_ROOT", "").strip()
     if env_override:
         override_path = Path(env_override).expanduser().resolve()
-        if override_path.exists():
-            return str(override_path)
+        return str(override_path) if override_path.exists() else env_override
 
     home = Path.home()
     suffix = Path("Neuropathology - Manuscripts") / "TrevisanWang2024" / "Data" / "ScreenResults"
@@ -114,6 +116,7 @@ def _default_data_root() -> str:
             if child.is_dir() and "UZH" in child.name and "Universit" in child.name:
                 candidates.append(child / suffix)
     else:
+        candidates.append(DEFAULT_SYSTEM_DATA_ROOT)
         candidates.append(home / suffix)
         candidates.append(Path("/home/crispr_data/TrevisanWang2024/ScreenResults"))
     for c in candidates:
@@ -129,10 +132,16 @@ def _resolve_scan_root(root_text: str) -> Path:
     if requested.exists():
         return requested
 
+    preferred_root = DEFAULT_SYSTEM_DATA_ROOT.resolve()
+    if str(requested).replace("\\", "/") == str(preferred_root).replace("\\", "/"):
+        return preferred_root if preferred_root.exists() else requested
+
     # Backward compatibility for old default roots used before shared data mount.
     normalized = str(requested).replace("\\", "/")
     legacy_suffix = "/Neuropathology - Manuscripts/TrevisanWang2024/Data/ScreenResults"
     if normalized.endswith(legacy_suffix):
+        if preferred_root.exists():
+            return preferred_root
         fallback = Path("/home/crispr_data/TrevisanWang2024/ScreenResults").resolve()
         if fallback.exists():
             return fallback
