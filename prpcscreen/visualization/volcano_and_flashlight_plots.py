@@ -630,49 +630,6 @@ def write_interactive_volcano_html(
         {
             "x": [],
             "y": [],
-            "mode": "markers",
-            "name": "Selected genes (outer ring)",
-            "marker": {"symbol": "circle-open", "size": 10.8, "color": "#111111", "line": {"width": 2, "color": "#111111"}},
-            "hoverinfo": "skip",
-            "showlegend": False,
-            "visible": False,
-        },
-        {
-            "x": [],
-            "y": [],
-            "mode": "markers",
-            "name": "Selected genes (inner ring)",
-            "marker": {"symbol": "circle-open", "size": 12, "color": "#f59e0b", "line": {"width": 2, "color": "#f59e0b"}},
-            "hoverinfo": "skip",
-            "showlegend": False,
-            "visible": False,
-        },
-        {
-            "x": [],
-            "y": [],
-            "text": [],
-            "mode": "markers",
-            "name": "Selected genes",
-            "marker": {"symbol": "circle", "size": 8, "color": "#facc15", "line": {"width": 1, "color": "#111111"}},
-            "hovertemplate": f"%{{text}}<br>{x_col}: %{{x:.3f}}<br>p-value: %{{y:.3f}}<extra></extra>",
-            "showlegend": False,
-            "visible": False,
-        },
-        {
-            "x": [],
-            "y": [],
-            "text": [],
-            "mode": "text",
-            "textposition": "top center",
-            "textfont": {"size": 11, "color": "#111111"},
-            "name": "Selected gene labels",
-            "hoverinfo": "skip",
-            "showlegend": False,
-            "visible": False,
-        },
-        {
-            "x": [],
-            "y": [],
             "text": [],
             "customdata": [],
             "mode": "markers",
@@ -701,6 +658,91 @@ def write_interactive_volcano_html(
         },
     ]
 
+    highlight_group_defaults = [
+        {"label": "1", "color": "#f59e0b"},
+        {"label": "2", "color": "#10b981"},
+        {"label": "3", "color": "#2563eb"},
+        {"label": "4", "color": "#ef4444"},
+    ]
+    highlight_group_trace_starts: list[int] = []
+    top_marker_trace = len(traces)
+    top_label_trace = top_marker_trace + 1
+    traces = traces[:-2]
+    for group in highlight_group_defaults:
+        highlight_group_trace_starts.append(len(traces))
+        traces.extend(
+            [
+                {
+                    "x": [],
+                    "y": [],
+                    "mode": "markers",
+                    "name": f"Selected genes ({group['label']} outline)",
+                    "marker": {"symbol": "circle-open", "size": 11.5, "color": "#111111", "line": {"width": 2, "color": "#111111"}},
+                    "hoverinfo": "skip",
+                    "showlegend": False,
+                    "visible": False,
+                },
+                {
+                    "x": [],
+                    "y": [],
+                    "text": [],
+                    "mode": "markers",
+                    "name": f"Selected genes ({group['label']})",
+                    "marker": {"symbol": "circle", "size": 8.5, "color": group["color"], "line": {"width": 1, "color": "#111111"}},
+                    "hovertemplate": f"%{{text}}<br>{x_col}: %{{x:.3f}}<br>p-value: %{{y:.3f}}<extra></extra>",
+                    "showlegend": False,
+                    "visible": False,
+                },
+                {
+                    "x": [],
+                    "y": [],
+                    "text": [],
+                    "mode": "text",
+                    "textposition": "top center",
+                    "textfont": {"size": 11, "color": group["color"]},
+                    "name": f"Selected gene labels ({group['label']})",
+                    "hoverinfo": "skip",
+                    "showlegend": False,
+                    "visible": False,
+                },
+            ]
+        )
+    top_marker_trace = len(traces)
+    top_label_trace = top_marker_trace + 1
+    traces.extend(
+        [
+            {
+                "x": [],
+                "y": [],
+                "text": [],
+                "customdata": [],
+                "mode": "markers",
+                "name": "Top-ranked genes",
+                "marker": {"symbol": "circle-open", "size": 6.6, "color": "#111111", "line": {"width": 2, "color": "#111111"}},
+                "hovertemplate": (
+                    "gene: %{text}"
+                    "<br>Plate: %{customdata[0]}"
+                    "<br>Coordinate: %{customdata[1]}"
+                    f"<br>{x_col}: %{{x:.3f}}<br>p-value: %{{y:.3f}}<extra></extra>"
+                ),
+                "showlegend": False,
+                "visible": False,
+            },
+            {
+                "x": [],
+                "y": [],
+                "text": [],
+                "mode": "text",
+                "textposition": "top center",
+                "textfont": {"size": 11, "color": "#111111"},
+                "name": "Top-ranked gene labels",
+                "hoverinfo": "skip",
+                "showlegend": False,
+                "visible": False,
+            },
+        ]
+    )
+
     layout = {
         "title": {"text": "Volcano plot"},
         "paper_bgcolor": "#f6f6f6",
@@ -726,6 +768,14 @@ def write_interactive_volcano_html(
     y_title_student_json = json.dumps(y_title_student, separators=(",", ":"))
     y_title_limma_json = json.dumps(y_title_limma, separators=(",", ":"))
     sublibrary_options_json = json.dumps(sublibrary_options, separators=(",", ":"))
+    x_min_json = json.dumps(float(x_min), separators=(",", ":"))
+    x_max_json = json.dumps(float(x_max), separators=(",", ":"))
+    y_min_json = json.dumps(float(y_min), separators=(",", ":"))
+    y_max_json = json.dumps(float(y_max), separators=(",", ":"))
+    p_cutoff_json = json.dumps(float(p_cutoff), separators=(",", ":"))
+    log2fc_cutoff_json = json.dumps(float(log2fc_cutoff), separators=(",", ":"))
+    highlight_group_trace_starts_json = json.dumps(highlight_group_trace_starts, separators=(",", ":"))
+    highlight_group_defaults_json = json.dumps(highlight_group_defaults, separators=(",", ":"))
 
     html = (
         "<!doctype html>\n"
@@ -741,6 +791,8 @@ def write_interactive_volcano_html(
         "    .controls { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 14px; }\n"
         "    .controls label { display: inline-flex; align-items: center; gap: 6px; user-select: none; }\n"
         "    .gene-controls input { min-width: 320px; border: 1px solid #d0d7de; border-radius: 6px; padding: 6px 8px; font-size: 13px; }\n"
+        "    .gene-controls input.color-picker { min-width: 44px; width: 44px; height: 32px; padding: 2px; }\n"
+        "    .gene-controls input.highlight-input { min-width: 420px; }\n"
         "    .gene-controls select { border: 1px solid #d0d7de; border-radius: 6px; padding: 6px 8px; font-size: 13px; background: #ffffff; }\n"
         "    .gene-controls button { border: 1px solid #c9ced6; border-radius: 6px; background: #ffffff; padding: 6px 10px; cursor: pointer; font-size: 13px; }\n"
         "    .gene-controls button:hover { background: #f4f6f8; }\n"
@@ -769,16 +821,65 @@ def write_interactive_volcano_html(
         "      <label><input id=\"toggle-neg\" type=\"checkbox\" checked> Negative controls</label>\n"
         "    </div>\n"
         "    <div class=\"controls gene-controls\">\n"
+        "      <label><input id=\"toggle-threshold-shading\" type=\"checkbox\" checked> Shade significant / effect-size quadrants</label>\n"
+        "      <label for=\"effect-cutoff\">Effect-size threshold</label>\n"
+        "      <input id=\"effect-cutoff\" type=\"number\" min=\"0\" step=\"0.05\" value=\""
+        + str(float(log2fc_cutoff))
+        + "\" />\n"
+        "      <label for=\"p-cutoff\">Significance p-value threshold</label>\n"
+        "      <input id=\"p-cutoff\" type=\"number\" min=\"0.000000000001\" max=\"1\" step=\"0.001\" value=\""
+        + str(float(p_cutoff))
+        + "\" />\n"
+        "      <span id=\"threshold-status\"></span>\n"
+        "    </div>\n"
+        "    <div class=\"controls gene-controls\">\n"
+        "      <label for=\"color-genes\">Experimental gene color</label>\n"
+        "      <input id=\"color-genes\" class=\"color-picker\" type=\"color\" value=\"#000000\" />\n"
+        "      <label for=\"color-pos\">Positive control color</label>\n"
+        "      <input id=\"color-pos\" class=\"color-picker\" type=\"color\" value=\"#000000\" />\n"
+        "      <label for=\"color-neg\">Negative control color</label>\n"
+        "      <input id=\"color-neg\" class=\"color-picker\" type=\"color\" value=\"#000000\" />\n"
+        "    </div>\n"
+        "    <div class=\"controls gene-controls\">\n"
         "      <label for=\"sublibrary-filter\">Gene sublibrary</label>\n"
         "      <select id=\"sublibrary-filter\"></select>\n"
         "      <span id=\"sublibrary-status\"></span>\n"
         "    </div>\n"
         "    <div class=\"controls gene-controls\">\n"
-        "      <label for=\"gene-input\">Highlight genes</label>\n"
-        "      <input id=\"gene-input\" type=\"text\" placeholder=\"GENE1, GENE2\" />\n"
-        "      <button id=\"gene-apply\" type=\"button\">Apply</button>\n"
-        "      <button id=\"gene-clear\" type=\"button\">Clear</button>\n"
-        "      <span id=\"gene-status\"></span>\n"
+        "      <label for=\"gene-input-1\">Highlight genes 1</label>\n"
+        "      <input id=\"gene-input-1\" class=\"highlight-input\" type=\"text\" placeholder=\"GENE1, GENE2; GENE3 GENE4\" />\n"
+        "      <label for=\"gene-color-1\">Color</label>\n"
+        "      <input id=\"gene-color-1\" class=\"color-picker\" type=\"color\" value=\"#f59e0b\" />\n"
+        "      <button id=\"gene-apply-1\" type=\"button\">Apply</button>\n"
+        "      <button id=\"gene-clear-1\" type=\"button\">Clear</button>\n"
+        "      <span id=\"gene-status-1\"></span>\n"
+        "    </div>\n"
+        "    <div class=\"controls gene-controls\">\n"
+        "      <label for=\"gene-input-2\">Highlight genes 2</label>\n"
+        "      <input id=\"gene-input-2\" class=\"highlight-input\" type=\"text\" placeholder=\"GENE1, GENE2; GENE3 GENE4\" />\n"
+        "      <label for=\"gene-color-2\">Color</label>\n"
+        "      <input id=\"gene-color-2\" class=\"color-picker\" type=\"color\" value=\"#10b981\" />\n"
+        "      <button id=\"gene-apply-2\" type=\"button\">Apply</button>\n"
+        "      <button id=\"gene-clear-2\" type=\"button\">Clear</button>\n"
+        "      <span id=\"gene-status-2\"></span>\n"
+        "    </div>\n"
+        "    <div class=\"controls gene-controls\">\n"
+        "      <label for=\"gene-input-3\">Highlight genes 3</label>\n"
+        "      <input id=\"gene-input-3\" class=\"highlight-input\" type=\"text\" placeholder=\"GENE1, GENE2; GENE3 GENE4\" />\n"
+        "      <label for=\"gene-color-3\">Color</label>\n"
+        "      <input id=\"gene-color-3\" class=\"color-picker\" type=\"color\" value=\"#2563eb\" />\n"
+        "      <button id=\"gene-apply-3\" type=\"button\">Apply</button>\n"
+        "      <button id=\"gene-clear-3\" type=\"button\">Clear</button>\n"
+        "      <span id=\"gene-status-3\"></span>\n"
+        "    </div>\n"
+        "    <div class=\"controls gene-controls\">\n"
+        "      <label for=\"gene-input-4\">Highlight genes 4</label>\n"
+        "      <input id=\"gene-input-4\" class=\"highlight-input\" type=\"text\" placeholder=\"GENE1, GENE2; GENE3 GENE4\" />\n"
+        "      <label for=\"gene-color-4\">Color</label>\n"
+        "      <input id=\"gene-color-4\" class=\"color-picker\" type=\"color\" value=\"#ef4444\" />\n"
+        "      <button id=\"gene-apply-4\" type=\"button\">Apply</button>\n"
+        "      <button id=\"gene-clear-4\" type=\"button\">Clear</button>\n"
+        "      <span id=\"gene-status-4\"></span>\n"
         "    </div>\n"
         "    <div class=\"controls gene-controls\">\n"
         "      <label for=\"top-mode\">Auto-label top genes</label>\n"
@@ -845,22 +946,126 @@ def write_interactive_volcano_html(
         "    const SUBLIBRARY_OPTIONS = "
         + sublibrary_options_json
         + ";\n"
+        "    const X_MIN = "
+        + x_min_json
+        + ";\n"
+        "    const X_MAX = "
+        + x_max_json
+        + ";\n"
+        "    const Y_MIN = "
+        + y_min_json
+        + ";\n"
+        "    const Y_MAX = "
+        + y_max_json
+        + ";\n"
+        "    const DEFAULT_P_CUTOFF = "
+        + p_cutoff_json
+        + ";\n"
+        "    const DEFAULT_LOG2FC_CUTOFF = "
+        + log2fc_cutoff_json
+        + ";\n"
+        "    const HIGHLIGHT_GROUP_TRACE_STARTS = "
+        + highlight_group_trace_starts_json
+        + ";\n"
+        "    const HIGHLIGHT_GROUP_DEFAULTS = "
+        + highlight_group_defaults_json
+        + ";\n"
         "    Plotly.newPlot('volcano', traces, layout, {responsive: true});\n"
         "    const volcanoDiv = document.getElementById('volcano');\n"
         "    const TRACE_GENES = 0;\n"
         "    const TRACE_POS = 1;\n"
         "    const TRACE_NEG = 2;\n"
         "    const TRACE_HITS = 3;\n"
-        "    const TRACE_SEL_OUTER = 4;\n"
-        "    const TRACE_SEL_INNER = 5;\n"
-        "    const TRACE_SEL_CENTER = 6;\n"
-        "    const TRACE_SEL_LABELS = 7;\n"
-        "    const TRACE_TOP_MARKERS = 8;\n"
-        "    const TRACE_TOP_LABELS = 9;\n"
+        "    const TRACE_TOP_MARKERS = HIGHLIGHT_GROUP_TRACE_STARTS[HIGHLIGHT_GROUP_TRACE_STARTS.length - 1] + 3;\n"
+        "    const TRACE_TOP_LABELS = TRACE_TOP_MARKERS + 1;\n"
         "    const YMODE_STUDENT = 'student';\n"
         "    const YMODE_LIMMA = 'limma';\n"
+        "    const DEFAULT_CATEGORY_COLORS = {\n"
+        "      genes: '#000000',\n"
+        "      pos: '#1d4ed8',\n"
+        "      neg: '#dc2626',\n"
+        "    };\n"
         "    let currentYMode = YMODE_LIMMA;\n"
         "    let topLabelsActive = false;\n"
+        "    function readEffectCutoff() {\n"
+        "      const raw = Number(document.getElementById('effect-cutoff').value);\n"
+        "      if (Number.isFinite(raw) && raw >= 0) return raw;\n"
+        "      return DEFAULT_LOG2FC_CUTOFF;\n"
+        "    }\n"
+        "    function readPCutoff() {\n"
+        "      const raw = Number(document.getElementById('p-cutoff').value);\n"
+        "      if (Number.isFinite(raw) && raw > 0 && raw <= 1) return raw;\n"
+        "      return DEFAULT_P_CUTOFF;\n"
+        "    }\n"
+        "    function currentYCutoff() {\n"
+        "      return -Math.log10(readPCutoff());\n"
+        "    }\n"
+        "    function buildThresholdShapes() {\n"
+        "      const effectCutoff = readEffectCutoff();\n"
+        "      const yCutoff = currentYCutoff();\n"
+        "      const showShading = document.getElementById('toggle-threshold-shading').checked;\n"
+        "      const shapes = [];\n"
+        "      if (showShading) {\n"
+        "        shapes.push({type: 'rect', x0: X_MIN, x1: -effectCutoff, y0: yCutoff, y1: Y_MAX, fillcolor: '#EBEBEB', opacity: 1, line: {width: 0}, layer: 'below'});\n"
+        "        shapes.push({type: 'rect', x0: effectCutoff, x1: X_MAX, y0: yCutoff, y1: Y_MAX, fillcolor: '#EBEBEB', opacity: 1, line: {width: 0}, layer: 'below'});\n"
+        "      }\n"
+        "      shapes.push({type: 'line', x0: X_MIN, x1: X_MAX, y0: 0, y1: 0, line: {color: 'grey', width: 1, dash: 'dot'}});\n"
+        "      shapes.push({type: 'line', x0: 0, x1: 0, y0: Y_MIN, y1: Y_MAX, line: {color: 'grey', width: 1, dash: 'dot'}});\n"
+        "      shapes.push({type: 'line', x0: X_MIN, x1: X_MAX, y0: yCutoff, y1: yCutoff, line: {color: '#E8E8E8', width: 1}});\n"
+        "      shapes.push({type: 'line', x0: -effectCutoff, x1: -effectCutoff, y0: Y_MIN, y1: Y_MAX, line: {color: '#E8E8E8', width: 1}});\n"
+        "      shapes.push({type: 'line', x0: effectCutoff, x1: effectCutoff, y0: Y_MIN, y1: Y_MAX, line: {color: '#E8E8E8', width: 1}});\n"
+        "      return shapes;\n"
+        "    }\n"
+        "    function rebuildHitPayloads() {\n"
+        "      const effectCutoff = readEffectCutoff();\n"
+        "      const yCutoff = currentYCutoff();\n"
+        "      const genes = traces[TRACE_GENES];\n"
+        "      const build = (useLimma) => {\n"
+        "        const xs = genes._x_all || [];\n"
+        "        const ys = useLimma ? (genes._y_limma_all || []) : (genes._y_student_all || []);\n"
+        "        const txt = genes._text_all || [];\n"
+        "        const custom = genes._customdata_all || [];\n"
+        "        const sub = genes._sublibrary_all || [];\n"
+        "        const out = {x: [], y: [], text: [], customdata: [], sublibrary: []};\n"
+        "        const n = Math.min(xs.length, ys.length, txt.length, custom.length, sub.length);\n"
+        "        for (let i = 0; i < n; i += 1) {\n"
+        "          const x = Number(xs[i]);\n"
+        "          const y = Number(ys[i]);\n"
+        "          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;\n"
+        "          if (Math.abs(x) < effectCutoff || y < yCutoff) continue;\n"
+        "          out.x.push(x);\n"
+        "          out.y.push(y);\n"
+        "          out.text.push(txt[i]);\n"
+        "          out.customdata.push(custom[i]);\n"
+        "          out.sublibrary.push(sub[i]);\n"
+        "        }\n"
+        "        return out;\n"
+        "      };\n"
+        "      const student = build(false);\n"
+        "      const limma = build(true);\n"
+        "      const hit = traces[TRACE_HITS];\n"
+        "      hit._x_student = student.x;\n"
+        "      hit._y_student = student.y;\n"
+        "      hit._text_student = student.text;\n"
+        "      hit._customdata_student = student.customdata;\n"
+        "      hit._sublibrary_student = student.sublibrary;\n"
+        "      hit._x_limma = limma.x;\n"
+        "      hit._y_limma = limma.y;\n"
+        "      hit._text_limma = limma.text;\n"
+        "      hit._customdata_limma = limma.customdata;\n"
+        "      hit._sublibrary_limma = limma.sublibrary;\n"
+        "    }\n"
+        "    function updateThresholdControls(silent = false) {\n"
+        "      const pCutoff = readPCutoff();\n"
+        "      const effectCutoff = readEffectCutoff();\n"
+        "      const yCutoff = currentYCutoff();\n"
+        "      Plotly.relayout('volcano', {shapes: buildThresholdShapes()});\n"
+        "      rebuildHitPayloads();\n"
+        "      applyGeneSublibraryFilter();\n"
+        "      if (!silent) {\n"
+        "        document.getElementById('threshold-status').textContent = `Thresholds: |effect| >= ${effectCutoff.toFixed(3)}, p <= ${pCutoff.toPrecision(3)} (-log10=${yCutoff.toFixed(3)}).`;\n"
+        "      }\n"
+        "    }\n"
         "    function populateSublibraryFilter() {\n"
         "      const sel = document.getElementById('sublibrary-filter');\n"
         "      sel.innerHTML = '';\n"
@@ -947,7 +1152,7 @@ def write_interactive_volcano_html(
         "        : `${label}: ${shownGenes}/${totalGenes} gene points visible.`;\n"
         "      document.getElementById('sublibrary-status').textContent = status;\n"
         "      geneIndex = buildGeneIndex();\n"
-        "      clearGeneHighlights('');\n"
+        "      applyAllGeneHighlights();\n"
         "      clearTopLabels('');\n"
         "      applyVisibility();\n"
         "    }\n"
@@ -1063,12 +1268,52 @@ def write_interactive_volcano_html(
         "      return idx;\n"
         "    }\n"
         "    let geneIndex = buildGeneIndex();\n"
-        "    function clearGeneHighlights(statusMessage = '') {\n"
-        "      Plotly.restyle('volcano', {x: [[]], y: [[]], visible: [false]}, [TRACE_SEL_OUTER]);\n"
-        "      Plotly.restyle('volcano', {x: [[]], y: [[]], visible: [false]}, [TRACE_SEL_INNER]);\n"
-        "      Plotly.restyle('volcano', {x: [[]], y: [[]], text: [[]], visible: [false]}, [TRACE_SEL_CENTER]);\n"
-        "      Plotly.restyle('volcano', {x: [[]], y: [[]], text: [[]], visible: [false]}, [TRACE_SEL_LABELS]);\n"
-        "      document.getElementById('gene-status').textContent = statusMessage;\n"
+        "    const HIGHLIGHT_GROUPS = HIGHLIGHT_GROUP_DEFAULTS.map((group, idx) => ({\n"
+        "      index: idx + 1,\n"
+        "      inputId: `gene-input-${idx + 1}`,\n"
+        "      colorId: `gene-color-${idx + 1}`,\n"
+        "      statusId: `gene-status-${idx + 1}`,\n"
+        "      applyId: `gene-apply-${idx + 1}`,\n"
+        "      clearId: `gene-clear-${idx + 1}`,\n"
+        "      outerTrace: HIGHLIGHT_GROUP_TRACE_STARTS[idx],\n"
+        "      centerTrace: HIGHLIGHT_GROUP_TRACE_STARTS[idx] + 1,\n"
+        "      labelTrace: HIGHLIGHT_GROUP_TRACE_STARTS[idx] + 2,\n"
+        "      defaultColor: group.color,\n"
+        "    }));\n"
+        "    function markerColorFor(trace, fallback) {\n"
+        "      const marker = trace && trace.marker ? trace.marker : {};\n"
+        "      const color = marker.color;\n"
+        "      return (typeof color === 'string' && color) ? color : fallback;\n"
+        "    }\n"
+        "    function syncColorInputs() {\n"
+        "      document.getElementById('color-genes').value = markerColorFor(traces[TRACE_GENES], DEFAULT_CATEGORY_COLORS.genes);\n"
+        "      document.getElementById('color-pos').value = markerColorFor(traces[TRACE_POS], DEFAULT_CATEGORY_COLORS.pos);\n"
+        "      document.getElementById('color-neg').value = markerColorFor(traces[TRACE_NEG], DEFAULT_CATEGORY_COLORS.neg);\n"
+        "    }\n"
+        "    function applyCategoryColors() {\n"
+        "      const geneColor = document.getElementById('color-genes').value || DEFAULT_CATEGORY_COLORS.genes;\n"
+        "      const posColor = document.getElementById('color-pos').value || DEFAULT_CATEGORY_COLORS.pos;\n"
+        "      const negColor = document.getElementById('color-neg').value || DEFAULT_CATEGORY_COLORS.neg;\n"
+        "      traces[TRACE_GENES].marker = traces[TRACE_GENES].marker || {};\n"
+        "      traces[TRACE_HITS].marker = traces[TRACE_HITS].marker || {};\n"
+        "      traces[TRACE_POS].marker = traces[TRACE_POS].marker || {};\n"
+        "      traces[TRACE_NEG].marker = traces[TRACE_NEG].marker || {};\n"
+        "      traces[TRACE_GENES].marker.color = geneColor;\n"
+        "      traces[TRACE_HITS].marker.color = geneColor;\n"
+        "      traces[TRACE_POS].marker.color = posColor;\n"
+        "      traces[TRACE_NEG].marker.color = negColor;\n"
+        "      Plotly.restyle('volcano', {'marker.color': [geneColor]}, [TRACE_GENES, TRACE_HITS]);\n"
+        "      Plotly.restyle('volcano', {'marker.color': [posColor]}, [TRACE_POS]);\n"
+        "      Plotly.restyle('volcano', {'marker.color': [negColor]}, [TRACE_NEG]);\n"
+        "    }\n"
+        "    function clearGeneHighlights(group, statusMessage = '') {\n"
+        "      Plotly.restyle('volcano', {x: [[]], y: [[]], visible: [false]}, [group.outerTrace]);\n"
+        "      Plotly.restyle('volcano', {x: [[]], y: [[]], text: [[]], visible: [false]}, [group.centerTrace]);\n"
+        "      Plotly.restyle('volcano', {x: [[]], y: [[]], text: [[]], visible: [false]}, [group.labelTrace]);\n"
+        "      document.getElementById(group.statusId).textContent = statusMessage;\n"
+        "    }\n"
+        "    function applyAllGeneHighlights() {\n"
+        "      for (const group of HIGHLIGHT_GROUPS) applyGeneHighlights(group, true);\n"
         "    }\n"
         "    function applyYMode() {\n"
         "      currentYMode = document.getElementById('ymode-limma').checked ? YMODE_LIMMA : YMODE_STUDENT;\n"
@@ -1182,11 +1427,11 @@ def write_interactive_volcano_html(
         "        : (mode === 'smallest_p' ? 'smallest p-value (active Y mode)' : 'strongest combo |effect| * -log10(p_active)');\n"
         "      document.getElementById('top-status').textContent = `Auto-labeled ${selected.length} gene(s) using ${modeName}.`;\n"
         "    }\n"
-        "    function applyGeneHighlights() {\n"
-        "      const raw = document.getElementById('gene-input').value;\n"
+        "    function applyGeneHighlights(group, silent = false) {\n"
+        "      const raw = document.getElementById(group.inputId).value;\n"
         "      const requested = parseGeneInput(raw);\n"
         "      if (requested.length === 0) {\n"
-        "        clearGeneHighlights('');\n"
+        "        clearGeneHighlights(group, '');\n"
         "        return;\n"
         "      }\n"
         "      const found = [];\n"
@@ -1200,13 +1445,13 @@ def write_interactive_volcano_html(
         "      const centerText = found.map((r) => `${r.gene} (${r.category})`);\n"
         "      const labelText = found.map((r) => r.gene);\n"
         "      const hasPoints = found.length > 0;\n"
-        "      Plotly.restyle('volcano', {x: [xVals], y: [yVals], visible: [hasPoints]}, [TRACE_SEL_OUTER]);\n"
-        "      Plotly.restyle('volcano', {x: [xVals], y: [yVals], visible: [hasPoints]}, [TRACE_SEL_INNER]);\n"
-        "      Plotly.restyle('volcano', {x: [xVals], y: [yVals], text: [centerText], visible: [hasPoints]}, [TRACE_SEL_CENTER]);\n"
-        "      Plotly.restyle('volcano', {x: [xVals], y: [yVals], text: [labelText], visible: [hasPoints]}, [TRACE_SEL_LABELS]);\n"
+        "      const groupColor = document.getElementById(group.colorId).value || group.defaultColor;\n"
+        "      Plotly.restyle('volcano', {x: [xVals], y: [yVals], visible: [hasPoints]}, [group.outerTrace]);\n"
+        "      Plotly.restyle('volcano', {'x': [xVals], 'y': [yVals], 'text': [centerText], 'marker.color': [groupColor], visible: [hasPoints]}, [group.centerTrace]);\n"
+        "      Plotly.restyle('volcano', {'x': [xVals], 'y': [yVals], 'text': [labelText], 'textfont.color': [groupColor], visible: [hasPoints]}, [group.labelTrace]);\n"
         "      let msg = `Highlighted ${found.length} gene(s).`;\n"
         "      if (missing.length > 0) msg += ` Not found: ${missing.join(', ')}`;\n"
-        "      document.getElementById('gene-status').textContent = msg;\n"
+        "      if (!silent) document.getElementById(group.statusId).textContent = msg;\n"
         "    }\n"
         "    function applyVisibility() {\n"
         "      const genesOn = document.getElementById('toggle-genes').checked;\n"
@@ -1244,20 +1489,29 @@ def write_interactive_volcano_html(
         "    document.getElementById('toggle-genes').addEventListener('change', applyVisibility);\n"
         "    document.getElementById('toggle-pos').addEventListener('change', applyVisibility);\n"
         "    document.getElementById('toggle-neg').addEventListener('change', applyVisibility);\n"
+        "    document.getElementById('toggle-threshold-shading').addEventListener('change', () => updateThresholdControls());\n"
+        "    document.getElementById('effect-cutoff').addEventListener('change', () => updateThresholdControls());\n"
+        "    document.getElementById('p-cutoff').addEventListener('change', () => updateThresholdControls());\n"
+        "    document.getElementById('color-genes').addEventListener('input', applyCategoryColors);\n"
+        "    document.getElementById('color-pos').addEventListener('input', applyCategoryColors);\n"
+        "    document.getElementById('color-neg').addEventListener('input', applyCategoryColors);\n"
         "    document.getElementById('sublibrary-filter').addEventListener('change', applyGeneSublibraryFilter);\n"
         "    document.getElementById('ymode-student').addEventListener('change', applyYMode);\n"
         "    document.getElementById('ymode-limma').addEventListener('change', applyYMode);\n"
-        "    document.getElementById('gene-apply').addEventListener('click', applyGeneHighlights);\n"
-        "    document.getElementById('gene-clear').addEventListener('click', () => {\n"
-        "      document.getElementById('gene-input').value = '';\n"
-        "      clearGeneHighlights('');\n"
-        "    });\n"
-        "    document.getElementById('gene-input').addEventListener('keydown', (ev) => {\n"
-        "      if (ev.key === 'Enter') {\n"
-        "        ev.preventDefault();\n"
-        "        applyGeneHighlights();\n"
-        "      }\n"
-        "    });\n"
+        "    for (const group of HIGHLIGHT_GROUPS) {\n"
+        "      document.getElementById(group.applyId).addEventListener('click', () => applyGeneHighlights(group));\n"
+        "      document.getElementById(group.clearId).addEventListener('click', () => {\n"
+        "        document.getElementById(group.inputId).value = '';\n"
+        "        clearGeneHighlights(group, '');\n"
+        "      });\n"
+        "      document.getElementById(group.inputId).addEventListener('keydown', (ev) => {\n"
+        "        if (ev.key === 'Enter') {\n"
+        "          ev.preventDefault();\n"
+        "          applyGeneHighlights(group);\n"
+        "        }\n"
+        "      });\n"
+        "      document.getElementById(group.colorId).addEventListener('input', () => applyGeneHighlights(group, true));\n"
+        "    }\n"
         "    document.getElementById('top-apply').addEventListener('click', applyTopLabels);\n"
         "    document.getElementById('top-clear').addEventListener('click', () => {\n"
         "      clearTopLabels('');\n"
@@ -1266,6 +1520,8 @@ def write_interactive_volcano_html(
         "    volcanoDiv.on('plotly_click', onVolcanoClick);\n"
         "    clearGeneInfo();\n"
         "    populateSublibraryFilter();\n"
+        "    syncColorInputs();\n"
+        "    updateThresholdControls(true);\n"
         "    applyYMode();\n"
         "  </script>\n"
         "</body>\n"
