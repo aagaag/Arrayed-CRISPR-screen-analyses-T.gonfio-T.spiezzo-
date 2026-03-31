@@ -1058,14 +1058,15 @@ def _scan_root(root_text: str) -> dict[str, Any]:
         except OSError:
             parent_dirs = []
 
-    raw_candidates = [str(root)]
-    raw_candidates.extend(str(p) for p in sorted(root_dirs, key=lambda x: x.as_posix().lower()))
-    raw_candidates.extend(str(p) for p in sorted(parent_dirs, key=lambda x: x.as_posix().lower()))
-    raw_candidates.extend(
+    raw_file_candidates = [
         str(p)
         for p in sorted(files, key=lambda x: x.as_posix().lower())
         if p.suffix.lower() in RAW_FILE_EXTENSIONS
-    )
+    ]
+    raw_candidates = [str(root)]
+    raw_candidates.extend(str(p) for p in sorted(root_dirs, key=lambda x: x.as_posix().lower()))
+    raw_candidates.extend(str(p) for p in sorted(parent_dirs, key=lambda x: x.as_posix().lower()))
+    raw_candidates.extend(raw_file_candidates)
     excel_files = [p for p in files if p.suffix.lower() in EXCEL_FILE_EXTENSIONS]
     known_excel_paths = {str(p.resolve()) for p in excel_files if p.exists()}
     for shared_path in _shared_genomics_candidates():
@@ -1135,13 +1136,15 @@ def _scan_root(root_text: str) -> dict[str, Any]:
     genomics_scored.sort(key=lambda rec: (-rec["score"], str(rec["path"]).lower()))
     genomics_candidates = [str(rec["path"]) for rec in genomics_scored]
 
+    raw_selected = raw_file_candidates[0] if raw_file_candidates else (str(root) if root.exists() else "")
+
     return {
         "root": str(root),
         "scan_roots": [str(p) for p in scan_roots],
         "raw_candidates": raw_candidates[:400],
         "layout_candidates": layout_candidates[:400],
         "genomics_candidates": genomics_candidates[:200],
-        "raw_selected": raw_candidates[0] if raw_candidates else "",
+        "raw_selected": raw_selected,
         "layout_selected": layout_candidates[0] if layout_candidates else "",
         "genomics_selected": genomics_candidates[0] if genomics_candidates else "",
         "counts": {

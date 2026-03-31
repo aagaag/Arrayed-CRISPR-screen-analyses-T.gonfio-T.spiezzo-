@@ -74,6 +74,12 @@ function buildPayload() {
   };
 }
 
+function requireRawDir() {
+  const raw = String(el("raw_dir").value || "").trim();
+  if (raw) return raw;
+  throw new Error("Please select or upload a Screen results file before validating or running the pipeline.");
+}
+
 async function uploadInput(target, file) {
   const fd = new FormData();
   fd.append("target", target);
@@ -89,6 +95,7 @@ async function uploadInput(target, file) {
 }
 
 async function validateInputs() {
+  requireRawDir();
   const payload = buildPayload();
   const resp = await fetch("/api/validate-inputs", {
     method: "POST",
@@ -131,9 +138,16 @@ async function scanRoot() {
   }
   if (data.raw_selected) el("raw_dir").value = data.raw_selected;
   if (data.genomics_selected) el("genomics_excel").value = data.genomics_selected;
-  setValidationStatus(
-    `Auto-fill found ${data.counts?.raw || 0} pooled candidate(s) and ${data.counts?.genomics || 0} genomics workbook(s).`
-  );
+  const rawCount = Number(data.counts?.raw || 0);
+  const genomicsCount = Number(data.counts?.genomics || 0);
+  if (!data.raw_selected) {
+    setValidationStatus(
+      `No screen-results file was found under ${root || "the selected data root"}. Upload a file or type its full path, then run again.`,
+      "error"
+    );
+    return;
+  }
+  setValidationStatus(`Auto-fill found ${rawCount} pooled candidate(s) and ${genomicsCount} genomics workbook(s).`);
 }
 
 async function fetchVolcanoFigure() {
@@ -173,6 +187,7 @@ async function pollStatus() {
 }
 
 async function runPipeline() {
+  requireRawDir();
   const payload = buildPayload();
   clearLog();
   setPreview("");
@@ -238,3 +253,6 @@ wireUpload("genomics_picker_btn", "genomics_picker", "genomics_excel", "genomics
 
 setStatus("Idle", "idle");
 setPreview("");
+scanRoot().catch((err) => {
+  setValidationStatus(err.message || "Auto-fill failed.", "error");
+});
