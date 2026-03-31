@@ -791,6 +791,7 @@ def write_interactive_volcano_html(
         "    .controls { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 14px; }\n"
         "    .controls label { display: inline-flex; align-items: center; gap: 4px; user-select: none; }\n"
         "    .gene-controls input { min-width: 320px; border: 1px solid #d0d7de; border-radius: 6px; padding: 6px 8px; font-size: 13px; }\n"
+        "    .controls input[type=\"checkbox\"], .controls input[type=\"radio\"] { min-width: 0; width: auto; height: auto; padding: 0; margin: 0; border: 0; border-radius: 0; }\n"
         "    .gene-controls input.color-picker { min-width: 44px; width: 44px; height: 32px; padding: 2px; }\n"
         "    .gene-controls input.threshold-input { min-width: 0; width: 88px; }\n"
         "    .gene-controls input.highlight-input { min-width: 420px; }\n"
