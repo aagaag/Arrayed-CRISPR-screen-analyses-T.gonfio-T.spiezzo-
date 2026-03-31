@@ -38,7 +38,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = Path(__file__).resolve().parent
 DEFAULT_OUTPUT_DIR = "/srv/crispr/output"
 DEFAULT_MODE = "pooled"
-DEFAULT_SHEET = "skylineplot2"
+DEFAULT_SHEET = ""
+DEFAULT_GENOMICS_SHEET = "skylineplot2"
 DEFAULT_SKIP_FRET = 38
 DEFAULT_SKIP_GLO = 9
 DEFAULT_HEATMAP_PLATE = "all"
@@ -368,7 +369,7 @@ def _validate_genomics_input(genomics_path: Path, sheet: str) -> dict[str, Any]:
         "prpcscreen/scripts/plot_genomic_signal_skyline.py",
         str(genomics_path),
         "--sheet",
-        (sheet or DEFAULT_SHEET).strip() or DEFAULT_SHEET,
+        (sheet or DEFAULT_GENOMICS_SHEET).strip() or DEFAULT_GENOMICS_SHEET,
         "--validate-only",
     ]
     preflight = subprocess.run(
@@ -386,7 +387,7 @@ def _validate_genomics_input(genomics_path: Path, sheet: str) -> dict[str, Any]:
     return {
         "path": str(genomics_path),
         "skyline_sheets": matches,
-        "validated_sheet": (sheet or DEFAULT_SHEET).strip() or DEFAULT_SHEET,
+        "validated_sheet": (sheet or DEFAULT_GENOMICS_SHEET).strip() or DEFAULT_GENOMICS_SHEET,
         "message": "Validated genomics workbook for skyline plotting.",
     }
 

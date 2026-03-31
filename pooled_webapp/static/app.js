@@ -1,7 +1,7 @@
 const el = (id) => document.getElementById(id);
 
 const MODE = "pooled";
-const DEFAULT_SHEET = "skylineplot2";
+const DEFAULT_SHEET = "";
 
 let currentRunId = null;
 let currentLogIndex = 0;
