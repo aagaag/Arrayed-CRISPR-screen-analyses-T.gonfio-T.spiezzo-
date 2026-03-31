@@ -54,6 +54,8 @@ Typical figures include:
 - `docs/PIPELINE_DOCUMENTATION.md`: detailed stage behavior and manuscript mapping.
 - `docs/METHODS.md`: plain-language methods section (inputs, math/stats processing, and plot interpretation).
 
+The dedicated pooled browser app now lives inside this same repository as `pooled_webapp/`.
+
 ## Quick Setup (All Versions)
 
 Install dependencies once:
