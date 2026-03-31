@@ -102,6 +102,10 @@ SHARED_GENOMICS_WORKBOOKS = (
 DEFAULT_SYSTEM_DATA_ROOT = Path(
     os.getenv("PRPCSCREEN_SYSTEM_DATA_ROOT", "/srv/crispr/ScreenResults").strip() or "/srv/crispr/ScreenResults"
 ).expanduser()
+ALLOWED_EXTERNAL_PATHS = (
+    DEFAULT_SYSTEM_DATA_ROOT,
+    Path(DEFAULT_OUTPUT_DIR).expanduser(),
+)
 
 
 def _default_data_root() -> str:
@@ -444,11 +448,19 @@ def _safe_path(path_text: str) -> Path:
     p = Path(path_text)
     p = p if p.is_absolute() else (REPO_ROOT / p)
     r = p.resolve()
-    repo_resolved = REPO_ROOT.resolve()
-    try:
-        r.relative_to(repo_resolved)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Path outside repository is not allowed: {path_text}") from exc
+    allowed_roots = [REPO_ROOT.resolve()]
+    for root in ALLOWED_EXTERNAL_PATHS:
+        try:
+            allowed_roots.append(root.resolve())
+        except Exception:
+            continue
+    for root in allowed_roots:
+        try:
+            r.relative_to(root)
+            return r
+        except ValueError:
+            continue
+    raise HTTPException(status_code=400, detail=f"Path outside allowed locations: {path_text}")
     return r
 
 
