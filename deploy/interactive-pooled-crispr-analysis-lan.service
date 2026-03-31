@@ -1,0 +1,16 @@
+[Unit]
+Description=Interactive pooled CRISPR analysis LAN web app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/aag/Arrayed-CRISPR-screen-analyses-T.gonfio-T.spiezzo-
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/home/aag/Arrayed-CRISPR-screen-analyses-T.gonfio-T.spiezzo-/deploy/interactive-pooled-crispr-analysis.env
+ExecStart=/home/aag/Arrayed-CRISPR-screen-analyses-T.gonfio-T.spiezzo-/.venv/bin/python -m uvicorn pooled_webapp.app:app --host 10.10.20.10 --port 8083
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

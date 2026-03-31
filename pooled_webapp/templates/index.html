@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interactive pooled CRISPR analysis</title>
+  <link rel="icon" href="/static/favicon.ico?v=20260331">
+  <link rel="apple-touch-icon" href="/static/favicon.ico?v=20260331">
+  <link rel="stylesheet" href="/static/style.css?v=20260331-pooled-1">
+</head>
+<body>
+  <main class="layout">
+    <section class="panel workflow-panel">
+      <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-bottom:8px;">
+        <span style="font-size:12px; color:#334155;">Signed in as {{ user.username }}{% if user.email %} ({{ user.email }}){% endif %}</span>
+        {% if user.is_admin %}
+        <a href="/admin/dashboard" style="font-size:12px; color:#0f172a;">Admin</a>
+        {% endif %}
+        {% if not has_local_session %}
+        <a href="/auth/login?force=1" style="font-size:12px; color:#0f172a;">App Login</a>
+        {% endif %}
+        <form action="/auth/logout" method="post" style="margin:0;">
+          <button type="submit" class="secondary" style="padding:4px 8px; font-size:12px;">{% if has_local_session %}Leave App Login{% else %}Log out{% endif %}</button>
+        </form>
+      </div>
+
+      <div class="brand">
+        <img src="/static/isab.svg?v=20260331" alt="ISAB logo" class="brand-logo">
+        <h1>Interactive pooled CRISPR analysis</h1>
+      </div>
+
+      <section class="workflow-card">
+        <h2>Data Inputs</h2>
+        <div class="grid compact-grid">
+          <label class="field-wide" title="Top-level folder used by Auto-fill Paths. In normal use this does not need to be changed.">
+            Data root (doesn't normally need to be changed)
+            <input id="data_root" value="{{ defaults.data_root }}" />
+          </label>
+          <button id="scan_btn" class="secondary action-button compact-action" type="button">Auto-fill Paths</button>
+
+          <label class="field-wide"><span title="Guide-level pooled screen results table. Required columns must include a guide identifier and replicate count columns for the reference and treatment groups, for example Negative_R1, Negative_R2, Positive_R1, and Positive_R2. CSV, TSV, TXT, and Excel workbooks are accepted.">Screen results (CSV/TSV/TXT/XLSX)</span>
+            <input id="raw_dir" list="raw_list" />
+            <datalist id="raw_list"></datalist>
+            <div id="raw_picker_status" class="upload-status"></div>
+          </label>
+          <div class="field-actions action-stack">
+            <button id="raw_picker_btn" class="secondary" type="button">Upload File</button>
+            <input id="raw_picker" class="hidden" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" />
+          </div>
+
+          <label class="field-wide"><span title="Optional annotation workbook used to attach chromosome/location metadata and predefined gene sublibraries to the volcano plot. It should contain columns such as Gene_symbol, Mean_log2FC, Chromosome, and Start_Position in a worksheet that can be used for skyline-style annotation.">Genomics XLSX (optional)</span>
+            <input id="genomics_excel" list="genomics_list" />
+            <datalist id="genomics_list"></datalist>
+            <div id="genomics_picker_status" class="upload-status"></div>
+          </label>
+          <div class="field-actions action-stack">
+            <button id="genomics_picker_btn" class="secondary" type="button">Upload File</button>
+            <input id="genomics_picker" class="hidden" type="file" accept=".xlsx,.xls,.xlsm" />
+          </div>
+
+          <label class="field-half" title="The pooled app clears this folder before each run and overwrites any existing files there.">Output dir (defaults to /srv/crispr/output and overwrites existing files there)
+            <input id="output_dir" value="{{ defaults.output_dir }}" />
+          </label>
+        </div>
+      </section>
+
+      <section class="workflow-card">
+        <h2>Execution</h2>
+        <p class="mode-note">This dedicated app only runs the pooled-screen volcano workflow. The generated output is a single interactive volcano plot.</p>
+        <div class="actions">
+          <button id="run_btn" type="button">Run Volcano Pipeline</button>
+          <button id="validate_btn" class="secondary" type="button">Validate Inputs</button>
+          <span id="status" class="status idle">Idle</span>
+        </div>
+        <div id="validation_status" class="validation-status">Validation has not been run yet.</div>
+      </section>
+
+      <section class="workflow-card">
+        <h2>Live Log</h2>
+        <pre id="log"></pre>
+      </section>
+    </section>
+
+    <section class="panel preview-panel">
+      <div class="preview-toolbar">
+        <h2>Interactive Volcano</h2>
+        <div class="preview-toolbar-actions">
+          <button id="open_current_interactive" class="secondary" type="button" disabled>Open Interactive Version</button>
+        </div>
+      </div>
+      <div id="preview_empty" class="preview-empty">
+        <p>No volcano shown yet.</p>
+        <p>Run the pooled pipeline to generate and preview the interactive volcano.</p>
+      </div>
+      <iframe id="preview_frame" title="Interactive volcano preview"></iframe>
+    </section>
+  </main>
+
+  <script src="/static/app.js?v=20260331-pooled-1"></script>
+</body>
+</html>

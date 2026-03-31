@@ -41,12 +41,15 @@ Typical figures include:
 ## Repository Layout
 
 - `orchestrate_screen_workflow.ps1`: one-command orchestrator for the full workflow (CLI or GUI mode).
+- `webapp/`: primary browser app for the full arrayed/combined workflow.
+- `pooled_webapp/`: dedicated pooled-screen browser app that only runs the interactive volcano workflow.
 - `prpcscreen/analysis/`: normalization, score/statistic calculations, hit extraction.
 - `prpcscreen/visualization/`: plotting modules used by figure scripts.
 - `prpcscreen/misc/`: utility transforms (for example, 384-well to 96-well mapping).
 - `prpcscreen/scripts/`: stage-level CLI entry points.
 - `prpcscreen/scripts/compute_pooled_metrics.py`: pooled replicate analysis that outputs figure-compatible columns.
 - `prpcscreen/scripts/run_pooled_pipeline.py`: pooled end-to-end runner that reuses existing figure scripts.
+- `prpcscreen/scripts/run_pooled_volcano_only.py`: pooled-only runner that regenerates just the interactive volcano output.
 - `prpcscreen/scripts/plot_genomic_signal_skyline.py`: genomic localization / Skyline plot script.
 - `docs/PIPELINE_DOCUMENTATION.md`: detailed stage behavior and manuscript mapping.
 - `docs/METHODS.md`: plain-language methods section (inputs, math/stats processing, and plot interpretation).

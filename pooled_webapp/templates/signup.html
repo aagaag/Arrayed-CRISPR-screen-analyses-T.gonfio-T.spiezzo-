@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PrPCScreen Access Request</title>
+  <style>
+    body { margin: 0; font-family: "Segoe UI", Tahoma, sans-serif; background: #f8fafc; color: #0f172a; }
+    .card { max-width: 560px; margin: 8vh auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 18px; }
+    h1 { margin: 0 0 14px 0; font-size: 22px; }
+    label { display: block; margin: 10px 0; font-size: 14px; font-weight: 600; }
+    input, textarea { width: 100%; margin-top: 6px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; }
+    textarea { min-height: 100px; resize: vertical; }
+    button { margin-top: 10px; background: #0b7285; color: #fff; border: 0; border-radius: 8px; padding: 9px 12px; font-weight: 700; cursor: pointer; }
+    .msg { margin: 10px 0; font-size: 13px; }
+    .error { color: #b91c1c; }
+    .notice { color: #0369a1; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Request Access</h1>
+    <p style="margin-top:0; font-size:13px; color:#475569;">
+      Submit your email and choose a password. Your account remains pending until approved by ISAB.
+    </p>
+    {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+    {% if notice %}<div class="msg notice">{{ notice }}</div>{% endif %}
+    <form action="/auth/signup" method="post">
+      <label>User ID (public)
+        <input name="user_id" type="text" required maxlength="48" pattern="[A-Za-z0-9._-]+" />
+      </label>
+      <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">Visible to other users; email stays private. Allowed: letters, digits, ., _, -</p>
+
+      <label>Email
+        <input name="email" type="email" required />
+      </label>
+      <label>Password
+        <input name="password" type="password" required />
+      </label>
+      <label>Optional note
+        <textarea name="note" placeholder="Who you are / project context"></textarea>
+      </label>
+      <button type="submit">Submit request</button>
+    </form>
+    <p style="font-size:13px; margin-top:14px;"><a href="/auth/login">Back to login</a></p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PrPCScreen Admin Dashboard</title>
+  <style>
+    body { margin: 0; font-family: "Segoe UI", Tahoma, sans-serif; background: #f8fafc; color: #0f172a; }
+    .wrap { max-width: 1200px; margin: 24px auto; padding: 0 12px; }
+    .card { background: #fff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+    .header-row { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+    .btn { border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer; text-decoration: none; display: inline-block; font-weight: 700; }
+    .btn-primary { background: #0b7285; color: #fff; }
+    .btn-secondary { background: #334155; color: #fff; }
+    .btn-danger { background: #b91c1c; color: #fff; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border-bottom: 1px solid #e2e8f0; text-align: left; padding: 8px; vertical-align: top; }
+    .muted { color: #64748b; }
+    .metrics { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:10px; }
+    .metric { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; background: #f8fafc; }
+    .metric .k { display:block; font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.03em; }
+    .metric .v { display:block; font-size:21px; font-weight:700; margin-top:4px; }
+    .section-title { margin-top:0; margin-bottom:8px; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+    .inline-form { display:inline-block; margin: 0 6px 6px 0; }
+    .action-btn { border:0; border-radius:6px; padding:6px 9px; font-size:12px; font-weight:700; cursor:pointer; }
+    .action-promote { background:#0b7285; color:#fff; }
+    .action-block { background:#b91c1c; color:#fff; }
+    .action-btn:disabled { opacity: 0.6; cursor: wait; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <div class="header-row">
+        <div>
+          <h1 style="margin:0; font-size:22px;">Admin Dashboard</h1>
+          <p class="muted" style="margin:6px 0 0 0;">Signed in as {{ user.username }}{% if user.email %} ({{ user.email }}){% endif %}</p>
+        </div>
+        <div class="header-row">
+          <a class="btn btn-primary" href="/">Open Analysis Interface</a>
+          <form action="/auth/logout" method="post" style="margin:0;">
+            <button type="submit" class="btn btn-secondary">Log out</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">Recorded Analytics</h2>
+      <p class="muted" style="margin-top:0;">These metrics reflect data currently recorded in the application database.</p>
+      <p class="muted" style="margin-top:0;">All timestamps on this page use Switzerland time (Europe/Zurich).</p>
+      <div class="metrics">
+        <div class="metric"><span class="k">Total users</span><span class="v">{{ analytics.total_users }}</span></div>
+        <div class="metric"><span class="k">Active users</span><span class="v">{{ analytics.active_users }}</span></div>
+        <div class="metric"><span class="k">Pending users</span><span class="v">{{ analytics.pending_users }}</span></div>
+        <div class="metric"><span class="k">Denied users</span><span class="v">{{ analytics.denied_users }}</span></div>
+        <div class="metric"><span class="k">Datasets</span><span class="v">{{ analytics.datasets }}</span></div>
+        <div class="metric"><span class="k">Runs total</span><span class="v">{{ analytics.runs_total }}</span></div>
+        <div class="metric"><span class="k">Runs active</span><span class="v">{{ analytics.runs_active }}</span></div>
+        <div class="metric"><span class="k">Access requests total</span><span class="v">{{ analytics.access_requests_total }}</span></div>
+        <div class="metric"><span class="k">Access requests pending</span><span class="v">{{ analytics.access_requests_pending }}</span></div>
+        <div class="metric"><span class="k">Access requests approved</span><span class="v">{{ analytics.access_requests_approved }}</span></div>
+        <div class="metric"><span class="k">Access requests rejected</span><span class="v">{{ analytics.access_requests_rejected }}</span></div>
+      </div>
+      <h3 style="margin-bottom:6px;">Recorded Run Status Breakdown</h3>
+      <pre>{{ analytics.tracked_run_statuses }}</pre>
+    </section>
+
+    <section class="card admin-refresh-section" id="active-users-card">
+      <h2 class="section-title">Active Users</h2>
+      <table>
+        <thead>
+          <tr><th>User ID</th><th>Email</th><th>Admin</th><th>Approved At</th><th>Created At</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for u in active_users %}
+          <tr>
+            <td>{{ u.username }}</td>
+            <td>{{ u.email or '' }}</td>
+            <td>{{ 'yes' if u.is_admin else 'no' }}</td>
+            <td>{{ u.approved_at or '' }}</td>
+            <td>{{ u.created_at or '' }}</td>
+            <td>
+              {% if not u.is_admin %}
+              <form class="inline-form" action="/admin/users/make-admin" method="post" data-async="true">
+                <input type="hidden" name="username" value="{{ u.username }}" />
+                <button class="action-btn action-promote" type="submit">Make admin</button>
+              </form>
+              {% endif %}
+              {% if u.username|lower != user.username|lower and u.username|lower != "aag" %}
+              <form class="inline-form" action="/admin/users/block" method="post" data-async="true">
+                <input type="hidden" name="username" value="{{ u.username }}" />
+                <button class="action-btn action-block" type="submit">Block user</button>
+              </form>
+              {% else %}
+              <span class="muted">No action</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="muted">No active users.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card admin-refresh-section" id="pending-users-card">
+      <h2 class="section-title">Users With Pending Requests</h2>
+      <table>
+        <thead>
+          <tr><th>User ID</th><th>Email</th><th>Status</th><th>Created At</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for u in pending_users %}
+          <tr>
+            <td>{{ u.username }}</td>
+            <td>{{ u.email or '' }}</td>
+            <td>{{ u.status }}</td>
+            <td>{{ u.created_at or '' }}</td>
+            <td>
+              {% if u.username|lower != user.username|lower and u.username|lower != "aag" %}
+              <form class="inline-form" action="/admin/users/approve" method="post" data-async="true">
+                <input type="hidden" name="username" value="{{ u.username }}" />
+                <button class="action-btn action-promote" type="submit">Approve user</button>
+              </form>
+              <form class="inline-form" action="/admin/users/block" method="post" data-async="true">
+                <input type="hidden" name="username" value="{{ u.username }}" />
+                <button class="action-btn action-block" type="submit">Block user</button>
+              </form>
+              {% else %}
+              <span class="muted">No action</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="muted">No pending users.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card admin-refresh-section" id="denied-users-card">
+      <h2 class="section-title">Users With Denied Requests</h2>
+      <table>
+        <thead>
+          <tr><th>User ID</th><th>Email</th><th>Status</th><th>Approved By</th><th>Created At</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for u in denied_users %}
+          <tr>
+            <td>{{ u.username }}</td>
+            <td>{{ u.email or '' }}</td>
+            <td>{{ u.status }}</td>
+            <td>{{ u.approved_by or '' }}</td>
+            <td>{{ u.created_at or '' }}</td>
+            <td>
+              {% if u.username|lower != user.username|lower and u.username|lower != "aag" %}
+              <form class="inline-form" action="/admin/users/restore" method="post" data-async="true">
+                <input type="hidden" name="username" value="{{ u.username }}" />
+                <button class="action-btn action-promote" type="submit">Restore user</button>
+              </form>
+              {% else %}
+              <span class="muted">No action</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="muted">No denied users.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card admin-refresh-section" id="all-access-requests-card">
+      <h2 class="section-title">All Access Requests</h2>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>User ID</th><th>Email</th><th>Status</th><th>Requested At</th><th>Decided At</th><th>Decided By</th></tr>
+        </thead>
+        <tbody>
+          {% for r in all_access_requests %}
+          <tr>
+            <td>{{ r.id }}</td>
+            <td>{{ r.requested_by_username or r.username or '' }}</td>
+            <td>{{ r.email or '' }}</td>
+            <td>{{ r.status or '' }}</td>
+            <td>{{ r.requested_at or '' }}</td>
+            <td>{{ r.decided_at or '' }}</td>
+            <td>{{ r.decided_by or '' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="muted">No access requests found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <script>
+    const refreshSectionIds = [
+      "active-users-card",
+      "pending-users-card",
+      "denied-users-card",
+      "all-access-requests-card",
+    ];
+
+    async function refreshAdminSections() {
+      const response = await fetch("/admin/dashboard", {
+        method: "GET",
+        headers: { "X-Requested-With": "fetch" },
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to refresh dashboard (${response.status})`);
+      }
+      const html = await response.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      for (const id of refreshSectionIds) {
+        const current = document.getElementById(id);
+        const incoming = doc.getElementById(id);
+        if (current && incoming) {
+          current.replaceWith(incoming);
+        }
+      }
+    }
+
+    async function submitAdminAction(form) {
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) {
+        submitButton.disabled = true;
+      }
+      try {
+        const response = await fetch(form.action, {
+          method: "POST",
+          body: new FormData(form),
+          headers: { "X-Requested-With": "fetch" },
+          credentials: "same-origin",
+          redirect: "follow",
+        });
+        if (!response.ok) {
+          let detail = `Request failed (${response.status})`;
+          const contentType = response.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            const payload = await response.json();
+            if (payload && payload.detail) {
+              detail = String(payload.detail);
+            }
+          }
+          throw new Error(detail);
+        }
+        await refreshAdminSections();
+      } catch (error) {
+        const message = (error && error.message) ? error.message : "Action failed.";
+        window.alert(message);
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+        }
+      }
+    }
+
+    document.addEventListener("submit", (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) {
+        return;
+      }
+      if (form.dataset.async !== "true") {
+        return;
+      }
+      event.preventDefault();
+      submitAdminAction(form);
+    });
+  </script>
+</body>
+</html>
