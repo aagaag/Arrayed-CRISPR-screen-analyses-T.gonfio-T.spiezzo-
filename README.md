@@ -59,6 +59,22 @@ Install dependencies once:
 python -m pip install -r requirements.txt
 ```
 
+## Shared Reference Data
+
+Canonical shared CRISPR reference workbooks live in `/home/aag/crispr_data/shared`.
+
+- Shared annotation workbook:
+  `/home/aag/crispr_data/shared/annotations/PrP_genes_and_NT_ordered_AguzziLab.xlsx`
+- Shared qgRNA workbooks:
+  `/home/aag/crispr_data/shared/guide_workbooks/T.gonfio_nbme2024.xlsx`
+  `/home/aag/crispr_data/shared/guide_workbooks/T.spiezzo_nbme2024.xlsx`
+
+Recommended deploy setting:
+
+```bash
+export CRISPR_SHARED_DATA_ROOT=/home/aag/crispr_data/shared
+```
+
 ## Pooled Screen Mode (Reuses Figure Stack)
 
 Use this mode when your input is guide-level pooled counts (for example `Negative_R*` vs `Positive_R*` replicate columns) and you want to reuse the existing replicate/distribution/volcano figure logic without forking plotting code.

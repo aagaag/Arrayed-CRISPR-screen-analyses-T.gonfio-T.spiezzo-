@@ -91,6 +91,12 @@ def _resolve_metadata_db_path() -> Path:
 
 METADATA_DB_PATH = _resolve_metadata_db_path()
 UPLOADS_ROOT = REPO_ROOT / "webapp" / "state" / "uploads"
+CRISPR_SHARED_DATA_ROOT = Path(
+    os.getenv("CRISPR_SHARED_DATA_ROOT", "/home/aag/crispr_data/shared").strip() or "/home/aag/crispr_data/shared"
+).expanduser()
+SHARED_GENOMICS_WORKBOOKS = (
+    CRISPR_SHARED_DATA_ROOT / "annotations" / "PrP_genes_and_NT_ordered_AguzziLab.xlsx",
+)
 
 
 def _default_data_root() -> str:
@@ -131,6 +137,22 @@ def _resolve_scan_root(root_text: str) -> Path:
         if fallback.exists():
             return fallback
     return requested
+
+
+def _shared_genomics_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    seen: set[str] = set()
+    for path in SHARED_GENOMICS_WORKBOOKS:
+        expanded = path.expanduser()
+        if not expanded.exists():
+            continue
+        resolved = expanded.resolve()
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(resolved)
+    return candidates
 
 
 def _resolve_python() -> str:
@@ -1035,6 +1057,11 @@ def _scan_root(root_text: str) -> dict[str, Any]:
         if p.suffix.lower() in RAW_FILE_EXTENSIONS
     )
     excel_files = [p for p in files if p.suffix.lower() in EXCEL_FILE_EXTENSIONS]
+    known_excel_paths = {str(p.resolve()) for p in excel_files if p.exists()}
+    for shared_path in _shared_genomics_candidates():
+        if str(shared_path) not in known_excel_paths:
+            excel_files.append(shared_path)
+            known_excel_paths.add(str(shared_path))
     layout_files = [p for p in files if p.suffix.lower() == ".csv"]
     layout_files.extend(p for p in excel_files if _looks_like_layout_workbook(str(p)))
 
