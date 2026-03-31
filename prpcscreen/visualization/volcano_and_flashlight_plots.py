@@ -554,7 +554,7 @@ def write_interactive_volcano_html(
             "customdata": genes_payload["customdata"],
             "mode": "markers",
             "name": "Genes",
-            "marker": {"color": "#000000", "size": 3, "opacity": 0.30},
+            "marker": {"color": "#d6d6d6", "size": 3, "opacity": 0.30},
             "hovertemplate": (
                 f"Gene: %{{text}}<br>Sublibrary: %{{customdata[5]}}<br>Plate: %{{customdata[1]}}<br>Coordinate: %{{customdata[2]}}"
                 f"<br>{x_col}: %{{x:.3f}}<br>p (primary): %{{customdata[3]:.3g}}<br>p (limma): %{{customdata[4]:.3g}}"
@@ -789,9 +789,10 @@ def write_interactive_volcano_html(
         "    body { margin: 0; font-family: Segoe UI, Arial, sans-serif; background: #f6f6f6; color: #1f1f1f; }\n"
         "    .wrap { max-width: 1400px; margin: 0 auto; padding: 16px; }\n"
         "    .controls { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; font-size: 14px; }\n"
-        "    .controls label { display: inline-flex; align-items: center; gap: 6px; user-select: none; }\n"
+        "    .controls label { display: inline-flex; align-items: center; gap: 4px; user-select: none; }\n"
         "    .gene-controls input { min-width: 320px; border: 1px solid #d0d7de; border-radius: 6px; padding: 6px 8px; font-size: 13px; }\n"
         "    .gene-controls input.color-picker { min-width: 44px; width: 44px; height: 32px; padding: 2px; }\n"
+        "    .gene-controls input.threshold-input { min-width: 0; width: 88px; }\n"
         "    .gene-controls input.highlight-input { min-width: 420px; }\n"
         "    .gene-controls select { border: 1px solid #d0d7de; border-radius: 6px; padding: 6px 8px; font-size: 13px; background: #ffffff; }\n"
         "    .gene-controls button { border: 1px solid #c9ced6; border-radius: 6px; background: #ffffff; padding: 6px 10px; cursor: pointer; font-size: 13px; }\n"
@@ -821,20 +822,20 @@ def write_interactive_volcano_html(
         "      <label><input id=\"toggle-neg\" type=\"checkbox\" checked> Negative controls</label>\n"
         "    </div>\n"
         "    <div class=\"controls gene-controls\">\n"
-        "      <label><input id=\"toggle-threshold-shading\" type=\"checkbox\" checked> Shade significant / effect-size quadrants</label>\n"
+        "      <label><input id=\"toggle-threshold-shading\" type=\"checkbox\" checked>Shade significant / effect-size quadrants</label>\n"
         "      <label for=\"effect-cutoff\">Effect-size threshold</label>\n"
-        "      <input id=\"effect-cutoff\" type=\"number\" min=\"0\" step=\"0.05\" value=\""
+        "      <input id=\"effect-cutoff\" class=\"threshold-input\" type=\"number\" min=\"0\" step=\"0.05\" value=\""
         + str(float(log2fc_cutoff))
         + "\" />\n"
         "      <label for=\"p-cutoff\">Significance p-value threshold</label>\n"
-        "      <input id=\"p-cutoff\" type=\"number\" min=\"0.000000000001\" max=\"1\" step=\"0.001\" value=\""
+        "      <input id=\"p-cutoff\" class=\"threshold-input\" type=\"number\" min=\"0.000000000001\" max=\"1\" step=\"0.001\" value=\""
         + str(float(p_cutoff))
         + "\" />\n"
         "      <span id=\"threshold-status\"></span>\n"
         "    </div>\n"
         "    <div class=\"controls gene-controls\">\n"
         "      <label for=\"color-genes\">Experimental gene color</label>\n"
-        "      <input id=\"color-genes\" class=\"color-picker\" type=\"color\" value=\"#000000\" />\n"
+        "      <input id=\"color-genes\" class=\"color-picker\" type=\"color\" value=\"#d6d6d6\" />\n"
         "      <label for=\"color-pos\">Positive control color</label>\n"
         "      <input id=\"color-pos\" class=\"color-picker\" type=\"color\" value=\"#000000\" />\n"
         "      <label for=\"color-neg\">Negative control color</label>\n"
@@ -981,7 +982,7 @@ def write_interactive_volcano_html(
         "    const YMODE_STUDENT = 'student';\n"
         "    const YMODE_LIMMA = 'limma';\n"
         "    const DEFAULT_CATEGORY_COLORS = {\n"
-        "      genes: '#000000',\n"
+        "      genes: '#d6d6d6',\n"
         "      pos: '#1d4ed8',\n"
         "      neg: '#dc2626',\n"
         "    };\n"
