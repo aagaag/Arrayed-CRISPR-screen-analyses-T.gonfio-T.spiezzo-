@@ -1178,8 +1178,6 @@ def _build_steps(req: RunRequest) -> tuple[list[dict[str, Any]], dict[str, str]]
         ]
         if str(req.genomics_excel).strip():
             pooled_cmd.extend(["--genomics-excel", str(req.genomics_excel)])
-        if str(req.sheet).strip():
-            pooled_cmd.extend(["--sheet", str(req.sheet).strip()])
         if req.debug:
             pooled_cmd.append("--debug")
         steps = [
