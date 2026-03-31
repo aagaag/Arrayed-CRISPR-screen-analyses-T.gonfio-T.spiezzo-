@@ -677,7 +677,7 @@ def write_interactive_volcano_html(
                     "y": [],
                     "mode": "markers",
                     "name": f"Selected genes ({group['label']} outline)",
-                    "marker": {"symbol": "circle-open", "size": 11.5, "color": "#111111", "line": {"width": 2, "color": "#111111"}},
+                    "marker": {"symbol": "circle", "size": 3, "color": group["color"], "opacity": 0},
                     "hoverinfo": "skip",
                     "showlegend": False,
                     "visible": False,
@@ -688,7 +688,7 @@ def write_interactive_volcano_html(
                     "text": [],
                     "mode": "markers",
                     "name": f"Selected genes ({group['label']})",
-                    "marker": {"symbol": "circle", "size": 8.5, "color": group["color"], "line": {"width": 1, "color": "#111111"}},
+                    "marker": {"symbol": "circle", "size": 3, "color": group["color"], "opacity": 1},
                     "hovertemplate": f"%{{text}}<br>{x_col}: %{{x:.3f}}<br>p-value: %{{y:.3f}}<extra></extra>",
                     "showlegend": False,
                     "visible": False,
@@ -851,6 +851,8 @@ def write_interactive_volcano_html(
         "      <input id=\"gene-input-1\" class=\"highlight-input\" type=\"text\" placeholder=\"GENE1, GENE2; GENE3 GENE4\" />\n"
         "      <label for=\"gene-color-1\">Color</label>\n"
         "      <input id=\"gene-color-1\" class=\"color-picker\" type=\"color\" value=\"#f59e0b\" />\n"
+        "      <label for=\"gene-size-1\">Size</label>\n"
+        "      <select id=\"gene-size-1\" class=\"mini-select\"><option value=\"1\" selected>1x</option><option value=\"2\">2x</option><option value=\"3\">3x</option><option value=\"4\">4x</option></select>\n"
         "      <button id=\"gene-apply-1\" type=\"button\">Apply</button>\n"
         "      <button id=\"gene-clear-1\" type=\"button\">Clear</button>\n"
         "      <span id=\"gene-status-1\"></span>\n"
@@ -860,6 +862,8 @@ def write_interactive_volcano_html(
         "      <input id=\"gene-input-2\" class=\"highlight-input\" type=\"text\" placeholder=\"GENE1, GENE2; GENE3 GENE4\" />\n"
         "      <label for=\"gene-color-2\">Color</label>\n"
         "      <input id=\"gene-color-2\" class=\"color-picker\" type=\"color\" value=\"#10b981\" />\n"
+        "      <label for=\"gene-size-2\">Size</label>\n"
+        "      <select id=\"gene-size-2\" class=\"mini-select\"><option value=\"1\" selected>1x</option><option value=\"2\">2x</option><option value=\"3\">3x</option><option value=\"4\">4x</option></select>\n"
         "      <button id=\"gene-apply-2\" type=\"button\">Apply</button>\n"
         "      <button id=\"gene-clear-2\" type=\"button\">Clear</button>\n"
         "      <span id=\"gene-status-2\"></span>\n"
@@ -869,6 +873,8 @@ def write_interactive_volcano_html(
         "      <input id=\"gene-input-3\" class=\"highlight-input\" type=\"text\" placeholder=\"GENE1, GENE2; GENE3 GENE4\" />\n"
         "      <label for=\"gene-color-3\">Color</label>\n"
         "      <input id=\"gene-color-3\" class=\"color-picker\" type=\"color\" value=\"#2563eb\" />\n"
+        "      <label for=\"gene-size-3\">Size</label>\n"
+        "      <select id=\"gene-size-3\" class=\"mini-select\"><option value=\"1\" selected>1x</option><option value=\"2\">2x</option><option value=\"3\">3x</option><option value=\"4\">4x</option></select>\n"
         "      <button id=\"gene-apply-3\" type=\"button\">Apply</button>\n"
         "      <button id=\"gene-clear-3\" type=\"button\">Clear</button>\n"
         "      <span id=\"gene-status-3\"></span>\n"
@@ -878,6 +884,8 @@ def write_interactive_volcano_html(
         "      <input id=\"gene-input-4\" class=\"highlight-input\" type=\"text\" placeholder=\"GENE1, GENE2; GENE3 GENE4\" />\n"
         "      <label for=\"gene-color-4\">Color</label>\n"
         "      <input id=\"gene-color-4\" class=\"color-picker\" type=\"color\" value=\"#ef4444\" />\n"
+        "      <label for=\"gene-size-4\">Size</label>\n"
+        "      <select id=\"gene-size-4\" class=\"mini-select\"><option value=\"1\" selected>1x</option><option value=\"2\">2x</option><option value=\"3\">3x</option><option value=\"4\">4x</option></select>\n"
         "      <button id=\"gene-apply-4\" type=\"button\">Apply</button>\n"
         "      <button id=\"gene-clear-4\" type=\"button\">Clear</button>\n"
         "      <span id=\"gene-status-4\"></span>\n"
@@ -986,8 +994,13 @@ def write_interactive_volcano_html(
         "      pos: '#1d4ed8',\n"
         "      neg: '#dc2626',\n"
         "    };\n"
+        "    const PRIMARY_MARKER_SIZE = Number((traces[TRACE_GENES] && traces[TRACE_GENES].marker && traces[TRACE_GENES].marker.size) || 3);\n"
         "    let currentYMode = YMODE_LIMMA;\n"
         "    let topLabelsActive = false;\n"
+        "    function readHighlightScale(group) {\n"
+        "      const raw = Number(document.getElementById(group.sizeId).value || 1);\n"
+        "      return [1, 2, 3, 4].includes(raw) ? raw : 1;\n"
+        "    }\n"
         "    function readEffectCutoff() {\n"
         "      const raw = Number(document.getElementById('effect-cutoff').value);\n"
         "      if (Number.isFinite(raw) && raw >= 0) return raw;\n"
@@ -1275,6 +1288,7 @@ def write_interactive_volcano_html(
         "      index: idx + 1,\n"
         "      inputId: `gene-input-${idx + 1}`,\n"
         "      colorId: `gene-color-${idx + 1}`,\n"
+        "      sizeId: `gene-size-${idx + 1}`,\n"
         "      statusId: `gene-status-${idx + 1}`,\n"
         "      applyId: `gene-apply-${idx + 1}`,\n"
         "      clearId: `gene-clear-${idx + 1}`,\n"
@@ -1470,10 +1484,12 @@ def write_interactive_volcano_html(
         "      const labelText = found.map((r) => r.gene);\n"
         "      const hasPoints = found.length > 0;\n"
         "      const groupColor = document.getElementById(group.colorId).value || group.defaultColor;\n"
-        "      Plotly.restyle('volcano', {x: [xVals], y: [yVals], visible: [hasPoints]}, [group.outerTrace]);\n"
-        "      Plotly.restyle('volcano', {'x': [xVals], 'y': [yVals], 'text': [centerText], 'marker.color': [groupColor], visible: [hasPoints]}, [group.centerTrace]);\n"
+        "      const markerSize = PRIMARY_MARKER_SIZE * readHighlightScale(group);\n"
+        "      Plotly.restyle('volcano', {x: [[]], y: [[]], visible: [false]}, [group.outerTrace]);\n"
+        "      Plotly.restyle('volcano', {'x': [xVals], 'y': [yVals], 'text': [centerText], 'marker.color': [groupColor], 'marker.size': [markerSize], visible: [hasPoints]}, [group.centerTrace]);\n"
         "      Plotly.restyle('volcano', {'x': [xVals], 'y': [yVals], 'text': [labelText], 'textfont.color': [groupColor], visible: [hasPoints]}, [group.labelTrace]);\n"
         "      let msg = `Highlighted ${found.length} gene(s).`;\n"
+        "      msg += ` Marker size: ${readHighlightScale(group)}x.`;\n"
         "      if (missing.length > 0) msg += ` Not found: ${missing.join(', ')}`;\n"
         "      if (!silent) document.getElementById(group.statusId).textContent = msg;\n"
         "      if (topLabelsActive) applyTopLabels();\n"
@@ -1538,6 +1554,7 @@ def write_interactive_volcano_html(
         "        }\n"
         "      });\n"
         "      document.getElementById(group.colorId).addEventListener('input', () => applyGeneHighlights(group, true));\n"
+        "      document.getElementById(group.sizeId).addEventListener('change', () => applyGeneHighlights(group, true));\n"
         "    }\n"
         "    document.getElementById('top-apply').addEventListener('click', applyTopLabels);\n"
         "    document.getElementById('top-clear').addEventListener('click', () => {\n"
