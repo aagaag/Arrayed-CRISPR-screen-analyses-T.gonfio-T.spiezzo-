@@ -75,7 +75,7 @@ LOCAL_BYPASS_HOSTS = {
     host.strip().lower()
     for host in os.getenv(
         "PRPCSCREEN_LOCAL_BYPASS_HOSTS",
-        "crispr-tools.lan,localhost,127.0.0.1,127.0.1.1,10.10.20.10,appenzell.internet-box.ch",
+        "localhost,127.0.0.1,127.0.1.1,192.168.251.10",
     ).split(",")
     if host.strip()
 }
